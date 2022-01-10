@@ -131,3 +131,6 @@ dmypy.json
 
 
 requirements.txt.backup
+.idea
+
+wwclouds/data

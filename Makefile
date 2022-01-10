@@ -1,14 +1,16 @@
-init: activate
-	pip install -r requirements.txt
+VENV=./venv
+PYTHON_DIR=$(VENV)/bin
+PYTHON=$(PYTHON_DIR)/python
+PIP=$(PYTHON_DIR)/pip
 
-.PHONY: activate
-	source ./venv/bin/activate
+install:
+	$(PIP) install -r requirements.txt
 
-requirements: activate
+requirements.txt: $(VENV)/lib/python3.10/site-packages/ $(VENV)/lib64/python3.10/site-packages/
 	touch requirements.txt
 	mv requirements.txt requirements.txt.backup
-	pip freeze > requirements.txt
+	$(PIP) freeze > requirements.txt
 
-test: activate
-	python -m unittest
+test:
+	$(PYTHON) -m unittest
 
