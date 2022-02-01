@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import requests
 from urllib.parse import quote_plus
 from enum import Enum, auto
+from typing import Union, List
 
 from wwclouds.satellite.downloader.downloader import Downloader
 from wwclouds.satellite.downloader.file_reader import FileReader
@@ -80,13 +81,11 @@ class Metosat(Downloader):
         product_id = self.__get_product_id_for_time(time)
         return self.__get_download_url_for_product(product_id)
 
-    def download(self, bands: None = None, time: datetime = datetime.utcnow()) -> FileReader:
-        self.create_dir_if_not_exist()
-        prev_updated_time = self.get_previous_update_time(time)
-        access_token = self.__get_access_key()
-        download_url = self.__get_download_url_for_time(prev_updated_time)
+    def _download(self, bands: Union[List[int], None], time: datetime) -> [str]:
+        download_url = self.__get_download_url_for_time(time)
         filepath = self.get_local_file_path(download_url)
-        if not os.path.exists(filepath):
+        if not self.file_is_downloaded(download_url):
+            access_token = self.__get_access_key()
             stream_response = requests.get(
                 download_url,
                 params={"format": "json"},
@@ -97,12 +96,12 @@ class Metosat(Downloader):
                     if chunk:
                         f.write(chunk)
                         f.flush()
-        return FileReader([filepath], self.reader)
+        return [filepath]
 
 
 if __name__ == '__main__':
     metosat = Metosat(SatelliteEnum.METOSAT8)
-    file_reader = metosat.download(time=datetime(2022, 1, 12, 9, 59))
+    file_reader = metosat.download(time=datetime(2022, 1, 12, 15, 29))
     scn = file_reader.read_to_scene()
     print(scn.available_dataset_ids())
     my_scene = 1.5

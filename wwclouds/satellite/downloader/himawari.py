@@ -23,29 +23,32 @@ class Himawari(Aws):
         return f"{self.__get_aws_directory(update_time)}/HS_H08_{update_time.year}{update_time.month:02.0f}" \
                f"{update_time.day:02.0f}_{update_time.hour:02.0f}{update_time.minute:02.0f}_B{band:02.0f}_FLDK"
 
-    def _get_latest_keys_for_band(self, band: int, time: datetime, retries: int = 3) -> [str]:
+    def _get_previous_keys_for_band(self, band: int, time: datetime, retries: int = 3) -> [str]:
         prev_updated_time = self.get_previous_update_time(time)
         file_entries = list(self._get_all_file_entries_for_band_in_aws_directory(band, prev_updated_time))
         if len(file_entries) != self.image_part_count and retries >= 1:
-            return self._get_latest_keys_for_band(band, time - self.update_frequency, retries - 1)
+            return self._get_previous_keys_for_band(band, time - self.update_frequency, retries - 1)
         return list(map(lambda file_entry: file_entry.key, file_entries))
 
     def _file_posthandler(self, filepath: str) -> str:
         new_filepath = filepath.rstrip(".bz2")
         if not os.path.exists(new_filepath):
+            if not os.path.exists(filepath):
+                raise FileNotFoundError("bz2 encrypted file cannot be found")
             with open(new_filepath, "wb") as new_file, bz2.BZ2File(filepath, "rb") as file:
                 for data in iter(lambda: file.read(100 * 1024), b""):
                     new_file.write(data)
+            os.remove(filepath)
         return new_filepath
 
 
 if __name__ == "__main__":
     himawari = Himawari()
-    file_reader = himawari.download([6, 7, 8], datetime.utcnow())
+    file_reader = himawari.download(time=datetime(2022, 1, 12, 15, 29))
     print(file_reader.filepaths)
     scn = file_reader.read_to_scene()
     print(scn.available_dataset_names())
-    my_scene = "B07"
+    my_scene = "B01"
     scn.load([my_scene])
 
     import matplotlib.pyplot as plt

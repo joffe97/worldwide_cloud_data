@@ -1,8 +1,7 @@
-from wwclouds.satellite.downloader import Downloader
 import abc
+from wwclouds.satellite.downloader import Downloader
 
 
 class SatelliteType(metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def __init__(self, downloader: Downloader = None, **kwargs):
+    def __init__(self, downloader: Downloader = None):
         self.downloader = downloader

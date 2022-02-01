@@ -19,22 +19,25 @@ class FileEntry:
 
 
 class Aws(Downloader, metaclass=abc.ABCMeta):
-    s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED, max_pool_connections=20))
-    transfer_config = s3transfer.TransferConfig(max_concurrency=20, use_threads=True)
-    s3t = s3transfer.create_transfer_manager(s3_client, transfer_config)
+    s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED, max_pool_connections=10))
+    transfer_config = s3transfer.TransferConfig(max_concurrency=10, use_threads=True)
 
     def __init__(self, bucket: str, product: str, reader: str, update_frequency: timedelta, all_bands: [int]):
-        super().__init__(subdir=f"{bucket}/{product}", reader=reader, update_frequency=update_frequency)
+        super().__init__(
+            subdir=f"{bucket}/{product}",
+            reader=reader,
+            update_frequency=update_frequency,
+            all_bands=all_bands
+        )
         self.bucket = bucket
         self.product = product
-        self.all_bands = all_bands
 
     @abc.abstractmethod
     def _get_aws_prefix_for_band(self, band: int, time: datetime) -> str:
         pass
 
     @abc.abstractmethod
-    def _get_latest_keys_for_band(self, band: int, time: datetime, retries: int = 3) -> [str]:
+    def _get_previous_keys_for_band(self, band: int, time: datetime, retries: int = 3) -> [str]:
         pass
 
     def _file_posthandler(self, filepath: str) -> str:
@@ -58,21 +61,8 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
             except KeyError:
                 break
 
-    def _get_latest_keys(self, bands: [int], time: datetime) -> [[str]]:
-        return [self._get_latest_keys_for_band(band, time) for band in bands]
-
-    def _download(self, bands: [int], time: datetime) -> [str]:
-        self.create_dir_if_not_exist()
-        keys_list = self._get_latest_keys(bands, time)
-        file_paths = []
-        for keys in keys_list:
-            for key in keys:
-                file_path = self.get_local_file_path(key)
-                if not os.path.exists(file_path):
-                    self.s3t.download(self.bucket, key, file_path)
-                file_paths.append(file_path)
-        self.s3t.shutdown()
-        return list(map(self._file_posthandler, file_paths))
+    def _get_previous_keys_for_bands(self, bands: [int], time: datetime) -> [[str]]:
+        return [self._get_previous_keys_for_band(band, time) for band in bands]
 
     # Testing band 7 downloads
     # Himawari download - Concurrent: 16.9 sec. Non-concurrent: 82.1 sec.
@@ -81,23 +71,15 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
     # Goes-17 download  - Concurrent: 33.3 sec. Non-concurrent: 37.7 sec.
     #                                 47.0                      38.7
     #                                 40.7                      30.4
-    def download(self, bands: Union[List[int], None] = None, time: datetime = datetime.utcnow()) -> FileReader:
-        if bands is None:
-            bands = self.all_bands
-        start = t.time()
-        file_reader = FileReader(self._download(bands, time), reader=self.reader)
-        print(t.time() - start)
-        return file_reader
-
-
-if __name__ == "__main__":
-    aws = Aws("noaa-goes17", "ABI-L1b-RadF", "abi_l1b", timedelta(minutes=10), list(range(1, 17)))
-    file_reader = aws.download([6, 7, 8], datetime.utcnow())
-    scn = file_reader.read_to_scene()
-    my_scene = "C07"
-    scn.load([my_scene])
-    import matplotlib.pyplot as plt
-
-    plt.figure()
-    plt.imshow(scn[my_scene])
-    plt.show()
+    def _download(self, bands: [int], time: datetime) -> [str]:
+        keys_list = self._get_previous_keys_for_bands(bands, time)
+        file_paths = []
+        s3t = s3transfer.create_transfer_manager(self.s3_client, self.transfer_config)
+        for keys in keys_list:
+            for key in keys:
+                file_path = self.get_local_file_path(key)
+                if not self.file_is_downloaded(key):
+                    s3t.download(self.bucket, key, file_path)
+                file_paths.append(file_path)
+        s3t.shutdown()
+        return list(map(self._file_posthandler, file_paths))

@@ -19,7 +19,8 @@ class SatelliteMapping:
 
     @staticmethod
     def __get_entry(satellite_enum: SatelliteEnum) -> _SatelliteMappingEntry:
-        mapping_entry = SatelliteMapping._MAPPING.get(satellite_enum)
+        satellite_enum_copy = SatelliteEnum(satellite_enum.value)
+        mapping_entry = SatelliteMapping._MAPPING.get(satellite_enum_copy)
         if mapping_entry is None:
             raise NotImplementedError("satellite_enum mapping is not implemented for the given satellite")
         return mapping_entry

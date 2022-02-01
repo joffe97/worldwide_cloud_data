@@ -1,40 +1,37 @@
-import matplotlib.pyplot as plt
-import satpy
-from satpy.utils import check_satpy
-from glob import glob
+from datetime import datetime
 
-check_satpy(readers=["seviri_l1b_hrit"])
-
-from satpy.writers import get_enhanced_image
-from dask.diagnostics import ProgressBar
-from pyresample import create_area_def
-
-# goes_type = noaa_goes.NoaaGoesType.GOES17
-# goes = noaa_goes.NoaaGoes(goes_type)
-
-# scn = goes.get_scene()
-
-print()
-
-# scn = satpy.Scene(filenames=glob("/home/joachim/Downloads/HS_H08_20220110_0000_B01_FLDK_R10_*.DAT"), reader="ahi_hsd")
-scn = satpy.Scene(filenames=["/home/joachim/Documents/BachelorProject/wwclouds/data/metosat11/EO:EUM:DAT:MSG:HRSEVIRI/MSG4-SEVI-MSG15-0100-NA-20220111221242.174000000Z-NA.nat"])
-print(scn.available_dataset_names())
-print(scn.available_composite_names())
-print(scn.all_dataset_ids(composites=True))
-dataset = "colorized_ir_clouds"
-scn.load([dataset])
-newscn = scn.resample(scn.min_area())
-print(newscn[dataset].attrs["area"])
+from satellite.satellite_enum import SatelliteEnum
+from satellite.satellite_collection import SatelliteCollection
+from scene_handler.multiscene_ext import MultiSceneExt
+from scene_handler.scene_ext import SceneExt
 
 
-print(newscn.available_dataset_names())
-# dataset = "colorized_ir_clouds"
-plt.figure()
-# plt.imshow(newscn[dataset])
-# plt.colorbar()
-# plt.show()
+def main():
+    satellite_enums = [
+        # SatelliteEnum.METOSAT8,
+        # SatelliteEnum.METOSAT11,
+        # SatelliteEnum.HIMAWARI8,
+        SatelliteEnum.GOES16,
+        SatelliteEnum.GOES17
+    ]
+    # utctime = datetime(2022, 1, 12, 2, 29)
+    utctime = datetime(2022, 1, 12, 15, 29)
+    query = 1.6
+    # query = 10.3
 
-img = get_enhanced_image(newscn[dataset])
-img.data.plot.imshow(vmin=0, vmax=1, rgb="bands")
+    satellite_collection = SatelliteCollection(satellite_enums)
+    file_readers = satellite_collection.download_all(utctime=utctime)
 
-plt.show()
+    scenes = list(map(lambda reader: reader.read_to_scene(), file_readers))
+    scene_collection = MultiSceneExt(scenes)
+
+    scene_collection.load([query])
+    # scn_coll.imshow_all_scenes(query)
+
+    comb_scene = scene_collection.combine()
+    comb_scene_ext = SceneExt.from_scene(comb_scene)
+    comb_scene_ext.imshow(query)
+
+
+if __name__ == '__main__':
+    main()
