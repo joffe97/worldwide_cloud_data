@@ -1,9 +1,12 @@
-from satpy import Scene, MultiScene, DataQuery
+from satpy import Scene, MultiScene, DataQuery, DataID
+from satpy.dataset.dataid import WavelengthRange
 from pyresample import create_area_def, AreaDefinition
 from typing import Callable
 import functools
 from collections.abc import Iterable
+from xarray import DataArray
 from wwclouds.scene_handler.scene_ext import SceneExt
+from wwclouds.scene_handler.multiscene_blend import EqcMean
 
 
 class MultiSceneExt(MultiScene):
@@ -51,11 +54,18 @@ class MultiSceneExt(MultiScene):
             return MultiSceneExt(multi_scene.scenes)
         return wrapper
 
-    def copy(self, scenes: list[Scene] | list[SceneExt] = None) -> "MultiSceneExt":
+    @staticmethod
+    def from_multi_scene(multi_scene: MultiScene):
         multi_scene_ext = MultiSceneExt()
+        old_vars = dict((key, value) for (key, value) in vars(multi_scene).items())
+        for key, value in old_vars.items():
+            setattr(multi_scene_ext, key, value)
+
+    def copy(self, scenes: list[Scene] | list[SceneExt] = None) -> "MultiSceneExt":
         old_vars = dict((key, value) for (key, value) in vars(self).items())
+        multi_scene_ext = MultiSceneExt(scenes)
         if scenes is not None:
-            old_vars["_scenes"] = scenes
+            old_vars.pop("_scenes")
         for key, value in old_vars.items():
             setattr(multi_scene_ext, key, value)
         return multi_scene_ext
@@ -64,54 +74,54 @@ class MultiSceneExt(MultiScene):
         super().load(query, *args, **kwargs)
         self.loaded.extend(query)
 
-    def group_loaded(self):
-        groups = dict()
-        for band in self.loaded:
-            groups[DataQuery(name="my_band", wavelength=(band - 0.2, band, band + 0.2), resolution=200000)] \
-                = ["IR_016", "C05", "B05"]
-        self.group(groups)
+    def __get_group_by_wavelength(self, wavelength: float) -> tuple[DataQuery, list[str]]:
+        filter_func = lambda data_id: wavelength in data_id["wavelength"]
+        matching_data_ids = list(filter(filter_func, self.loaded_dataset_ids))
 
-    # def resample(self, *args, **kwargs) -> "MultiSceneExt":
-        # scenes = super().resample(*args, **kwargs).scenes
-        # return self.copy(scenes)
+        wavelength_min = min((data_id["wavelength"].min for data_id in matching_data_ids))
+        wavelength_max = max((data_id["wavelength"].max for data_id in matching_data_ids))
+        wavelength_central = round((wavelength_max + wavelength_min) / 2, 2)
+
+        resolution = min((data_id["resolution"] for data_id in matching_data_ids))
+        matching_data_id_names = list(map(lambda data_id: data_id["name"], matching_data_ids))
+
+        return (
+            DataQuery(
+                name=f"wavelength_{wavelength}",
+                wavelength=(wavelength_min, wavelength_central, wavelength_max),
+                resolution=resolution
+            ),
+            matching_data_id_names
+        )
+
+    def group_loaded(self):
+        groups = dict(map(self.__get_group_by_wavelength, self.loaded))
+        self.group(groups)
 
     def imshow_all_scenes(self, query: str | float):
         for scn in self.scenes:
             scn.imshow(query)
 
-    def resample_all_to_eqc(self, **kwargs) -> "MultiSceneExt":
-        return self.copy(list(map(lambda scn: scn.resample_to_eqc_area(resolution=20, **kwargs), self.scenes)))
+    def resample_all_to_eqc(self, *, resolution=None, **kwargs) -> "MultiScene":
+        return MultiScene([scn.resample_to_eqc_area(resolution=resolution, **kwargs) for scn in self.scenes])
 
-    @__return_as_multiscene_ext_decorator
-    def resample_all_to_eqc2(self, **kwargs) -> "MultiSceneExt":
+    def resample_all_to_eqc2(self, *, resolution=None, **kwargs) -> "MultiScene":
         projection = {"proj": "eqc"}  # Equidistant cylindrical projection
         new_area_args = {
             "area_id": "eqc_area",
             "projection": projection,
-            "resolution": 20,
-            "radius": [180, 90],
-            "units": "degrees"
         }
+        if resolution is not None:
+            new_area_args["resolution"] = resolution
         new_area_def = create_area_def(**new_area_args)
         return self.resample(new_area_def, **kwargs)
 
     def get_pixel_size_in_degrees(self, band) -> float:
         return self.first_scene.get_pixel_size_in_degrees(band) if len(self.scenes) else 0.0
 
-    def combine(self) -> Scene:
+    def combine(self) -> SceneExt:
         self.group_loaded()
-        for scn in self.scenes:
-            print(scn.available_dataset_names())
-            print(scn[1.6].attrs["area"])
-            print()
-        multi_scn = self.resample_all_to_eqc()
-        multi_scn = multi_scn.resample()
-        print(multi_scn.shared_dataset_ids)
-        for scn in multi_scn.scenes:
-            print(scn.available_dataset_names())
-            print(scn[1.6].attrs["area"])
-            print(scn.get_lonlats(1.6))
-            print()
-        combined_scn = multi_scn.blend()
-        combined_scn.load([1.6])
-        return combined_scn
+        multi_scn = self.resample_all_to_eqc(resolution=100000)
+        combined_scn = multi_scn.blend(EqcMean.blend_func)
+        combined_scn.load(self.loaded)
+        return SceneExt.from_scene(combined_scn)

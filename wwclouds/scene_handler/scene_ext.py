@@ -103,9 +103,3 @@ class SceneExt(Scene):
             **area_def_args
         )
         return self.resample(area_def, **kwargs)
-
-    def __repr__(self):
-        return super().__repr__()
-
-    def __str__(self):
-        return super().__str__()
