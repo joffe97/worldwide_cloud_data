@@ -4,8 +4,17 @@ from xarray import DataArray
 from pyresample import create_area_def, AreaDefinition
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Callable
+from typing import Callable, Union
 import functools
+
+
+def _return_as_scene_ext_decorator(func) -> Callable[..., "SceneExt"]:
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        scene = func(*args, **kwargs)
+        return SceneExt.from_scene(scene)
+
+    return wrapper
 
 
 class SceneExt(Scene):
@@ -37,16 +46,8 @@ class SceneExt(Scene):
         return self.__first_band.attrs["area"].proj_dict
 
     @property
-    def lon_0(self) -> float | None:
+    def lon_0(self) -> Union[float, None]:
         return self.proj.get("lon_0")
-
-    @staticmethod
-    def __return_as_scene_ext_decorator(func) -> Callable[..., "SceneExt"]:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            scene = func(*args, **kwargs)
-            return SceneExt.from_scene(scene)
-        return wrapper
 
     def get_lonlats(self, band) -> tuple[np.ndarray, np.ndarray]:
         return self[band].attrs["area"].get_lonlats()
@@ -62,7 +63,7 @@ class SceneExt(Scene):
         cell2 = lons[1]
         return abs(cell2 - cell1)
 
-    @__return_as_scene_ext_decorator
+    @_return_as_scene_ext_decorator
     def resample(self, destination=None, datasets=None, generate=True,
                  unload=True, resampler=None, reduce_data=True,
                  **resample_kwargs) -> "SceneExt":
@@ -79,7 +80,7 @@ class SceneExt(Scene):
         img.data.plot.imshow()
         plt.show()
 
-    def imshow(self, query: str | float):
+    def imshow(self, query: Union[str, float]):
         if True or query in self.available_dataset_names():
             self.__imshow_wavelength(query)
         elif False or query in self.available_composite_names():
@@ -90,10 +91,7 @@ class SceneExt(Scene):
     def resample_to_eqc_area(self, *, resolution=None, **kwargs) -> "SceneExt":
         projection = {"proj": "eqc", "lon_0": self.lon_0}  # Equidistant cylindrical projection
 
-        area_def_args = {
-            # "radius": [180, 90],
-            # "units": "degrees"
-        }
+        area_def_args = dict()
         if resolution is not None:
             area_def_args["resolution"] = resolution
 

@@ -17,11 +17,10 @@ class MetosatType(Enum):
 
     @property
     def collection_id(self):
-        match self:
-            case MetosatType.METOSAT8:
-                return "EO:EUM:DAT:MSG:HRSEVIRI-IODC"
-            case MetosatType.METOSAT11:
-                return "EO:EUM:DAT:MSG:HRSEVIRI"
+        if self == MetosatType.METOSAT8:
+            return "EO:EUM:DAT:MSG:HRSEVIRI-IODC"
+        elif self == MetosatType.METOSAT11:
+            return "EO:EUM:DAT:MSG:HRSEVIRI"
 
     @staticmethod
     def from_str(string: str) -> "MetosatType":
