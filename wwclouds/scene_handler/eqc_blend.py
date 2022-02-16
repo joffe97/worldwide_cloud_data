@@ -1,9 +1,13 @@
+import statistics
+import time
+
 import xarray as xr
 import dask.array as da
 import numpy as np
 from pyresample import AreaDefinition
 from datetime import datetime
 from enum import Enum, auto
+from geopy import distance
 
 
 class Axis(Enum):
@@ -20,32 +24,32 @@ class Axis(Enum):
             raise ValueError("earth_radius_in_metres is not implemented for the given axis")
 
     @property
-    def max_degree(self):
+    def degree_count(self):
         if self == Axis.LON:
             return 360
         elif self == Axis.LAT:
             return 180
         else:
-            raise ValueError("max_degree is not implemented for the given axis")
+            raise ValueError("degree_count is not implemented for the given axis")
 
 
-class EqcMean:
+class EqcBlend:
     def __init__(self, data_arrays: list[xr.DataArray]):
         if len(data_arrays) == 0:
             raise ValueError("cannot create EqcMean object with 0 DataArrays")
         self.data_arrays = data_arrays
         self.lon_delta_step, self.lat_delta_step = self.__get_lonlats_delta_steps(10)
 
-        self.data = np.empty((self.lat_len, self.lon_len))
+        self.data = np.empty((self.lat_len, self.lon_len, len(self.data_arrays)))
         self.data[:] = np.nan
 
     @property
     def lon_len(self) -> int:
-        return int(Axis.LON.max_degree // self.lon_delta_step)
+        return int(Axis.LON.degree_count // self.lon_delta_step)
 
     @property
     def lat_len(self) -> int:
-        return int(Axis.LAT.max_degree // self.lat_delta_step)
+        return int(Axis.LAT.degree_count // self.lat_delta_step)
 
     @property
     def first_data_array(self) -> xr.DataArray:
@@ -68,8 +72,8 @@ class EqcMean:
     def coords(self):
         lons, lats = self.lonlats
         return {
-            "x": lons,
-            "y": lats
+            "y": lats,
+            "x": lons
         }
 
     @property
@@ -97,7 +101,7 @@ class EqcMean:
         return area.copy(**args)
 
     def __get_axis_sorted_in_degrees(self, axis: Axis) -> np.ndarray:
-        max_value = axis.max_degree
+        max_value = axis.degree_count
         delta_step = getattr(self, f"{axis.name.lower()}_delta_step")
         axis_len_aim = getattr(self, f"{axis.name.lower()}_len")
 
@@ -144,25 +148,42 @@ class EqcMean:
 
     def __translate_coords_to_earth_array_indexes(self, coord: tuple[float, float]) -> tuple[int, int]:
         if len(coord) != 2:
-            raise ValueError("coord cannot contain more than two values")
-        coord = [
-            (coord[0] + (Axis.LON.max_degree // 2)) % Axis.LON.max_degree,
-            (coord[1] + (Axis.LAT.max_degree // 2)) % Axis.LAT.max_degree
+            raise ValueError("coord must contain two values")
+        aligned_coord = [
+            (coord[0] + (Axis.LON.degree_count // 2)) % Axis.LON.degree_count,
+            (coord[1] + (Axis.LAT.degree_count // 2)) % Axis.LAT.degree_count
         ]
-        earth_array_pos = (
-            round(coord[0] / self.lon_delta_step) % self.lon_len,
-            round(coord[1] / self.lat_delta_step) % self.lat_len
+        earth_array_indexes = (
+            round(aligned_coord[0] / self.lon_delta_step) % self.lon_len,
+            round(aligned_coord[1] / self.lat_delta_step) % self.lat_len
         )
-        return earth_array_pos
+        return earth_array_indexes
+
+    # (0,0)     -> (-180,90)
+    # (100,100) -> (-90,45)
+    # (200,200) -> (0,0)
+    # (300,100) -> (90,45)
+    def __translate_earth_array_indexes_to_coords(self, earth_array_indexes: tuple[int, int]) -> tuple[float, float]:
+        if len(earth_array_indexes) != 2:
+            raise ValueError("earth_array_indexes must contain two values")
+        coords = {
+            Axis.LON.name: (earth_array_indexes[0] - (self.lon_len / 2)) * self.lon_delta_step,
+            Axis.LAT.name: (earth_array_indexes[1] - (self.lat_len / 2)) * self.lat_delta_step
+        }
+        for axis in Axis:
+            edge_value = float(axis.degree_count / 2)
+            coords[axis.name] = sorted([-edge_value, coords[axis.name], edge_value])[1]
+        return coords[Axis.LON.name], coords[Axis.LAT.name]
 
     def __add_value_to_coordinate(self, value: float, coordinate: tuple[float, float]):
         if np.isnan(value):
             return
         lon_index, lat_index = self.__translate_coords_to_earth_array_indexes(coordinate)
-        old_value = value if np.isnan(self.data[lat_index][lon_index]) else self.data[lat_index][lon_index]
-        self.data[lat_index][lon_index] = (old_value + value) / 2
+        # old_value = value if np.isnan(self.data[lat_index][lon_index]) else self.data[lat_index][lon_index]
+        # self.data[lat_index][lon_index] = (old_value + value) / 2
 
-    def __add_data_array(self, data_array: xr.DataArray) -> None:
+    def __add_data_array(self, data_array_indexes: int) -> None:
+        data_array = self.data_arrays[data_array_indexes]
         values = data_array.values
         area: AreaDefinition = data_array.attrs["area"]
         lons, lats = area.get_lonlats()
@@ -170,11 +191,44 @@ class EqcMean:
         latitude_list = list(reversed(list(map(lambda val: val[0], lats))))
         for lat_index, value_row in enumerate(values):
             for lon_index, value in enumerate(value_row):
-                coord = (longitude_list[lon_index], latitude_list[lat_index])
-                self.__add_value_to_coordinate(value, coord)
+                if np.isnan(value):
+                    continue
+                new_lon_index, new_lat_index = self.__translate_coords_to_earth_array_indexes(
+                    (longitude_list[lon_index], latitude_list[lat_index])
+                )
+                self.data[new_lat_index][new_lon_index][data_array_indexes] = value
+
+    def __estimate_value_in_earth_array(self, indexes: tuple[int, int]) -> float:
+        values = self.data[indexes[1]][indexes[0]]
+        lon, _ = self.__translate_earth_array_indexes_to_coords(indexes)
+        # print(f"{indexes} -> {coords}")
+        # shifted_coords = (indexes[0] - 90, indexes[1])
+        # distance_values: list[tuple[float, float]] = []
+        lowest_distance = np.inf
+        value = np.nan
+        for data_array, cur_value in zip(self.data_arrays, values):
+            if np.isnan(cur_value):
+                continue
+            proj_center_lon = float(data_array.attrs["area"].proj_dict["lon_0"])
+            lon_distance = abs(lon - proj_center_lon) % (Axis.LON.degree_count / 2)
+            # distance_values.append((lon_distance, cur_value))
+            # (lowest_distance, value) = min((lowest_distance, value), (lon_distance, cur_value), key=lambda tup: tup[0])
+            if lon_distance < lowest_distance:
+                lowest_distance = lon_distance
+                value = cur_value
+        return value
+
+    def as_2d_np_array(self) -> np.ndarray:
+        np_array = np.empty((self.lat_len, self.lon_len))
+        np_array[:] = np.nan
+        for lat_index, data_row in enumerate(self.data):
+            print(f"\t* {lat_index}/{len(self.data)}")
+            for lon_index in range(len(data_row)):
+                np_array[lat_index][lon_index] = self.__estimate_value_in_earth_array((lon_index, lat_index))
+        return np_array
 
     def as_data_array(self) -> xr.DataArray:
-        data = da.from_array(self.data)
+        np_array = da.from_array(self.as_2d_np_array())
         start_time, end_time = self.time_range
         attrs = {
             "start_time": start_time,
@@ -182,18 +236,22 @@ class EqcMean:
             "area": self.area_def
         }
         return xr.DataArray(
-            data,
+            np_array,
             dims=["y", "x"],
             coords=self.coords,
             attrs=attrs
         )
 
     def blend(self) -> None:
-        for data_array in self.data_arrays:
-            self.__add_data_array(data_array)
+        for data_array_index in range(len(self.data_arrays)):
+            self.__add_data_array(data_array_index)
 
     @staticmethod
     def blend_func(data_arrays: list[xr.DataArray]) -> xr.DataArray:
-        eqc_mean = EqcMean(data_arrays)
+        from time import time
+        start_time = time()
+        print(f"starting blending")
+        eqc_mean = EqcBlend(data_arrays)
         eqc_mean.blend()
+        print(f"inner blend: {time() - start_time}")
         return eqc_mean.as_data_array()

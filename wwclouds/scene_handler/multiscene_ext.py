@@ -6,7 +6,7 @@ import functools
 from collections.abc import Iterable
 from xarray import DataArray
 from wwclouds.scene_handler.scene_ext import SceneExt
-from wwclouds.scene_handler.multiscene_blend import EqcMean
+from wwclouds.scene_handler.eqc_blend import EqcBlend
 
 
 class MultiSceneExt(MultiScene):
@@ -115,27 +115,19 @@ class MultiSceneExt(MultiScene):
     def resample_all_to_eqc(self, *, resolution=None, **kwargs) -> "MultiScene":
         return MultiScene([scn.resample_to_eqc_area(resolution=resolution, **kwargs) for scn in self.scenes])
 
-    def resample_all_to_eqc2(self, *, resolution=None, **kwargs) -> "MultiScene":
-        projection = {"proj": "eqc"}  # Equidistant cylindrical projection
-        new_area_args = {
-            "area_id": "eqc_area",
-            "projection": projection,
-        }
-        if resolution is not None:
-            new_area_args["resolution"] = resolution
-        new_area_def = create_area_def(**new_area_args)
-        return self.resample(new_area_def, **kwargs)
-
-    def get_pixel_size_in_degrees(self, band) -> float:
-        return self.first_scene.get_pixel_size_in_degrees(band) if len(self.scenes) else 0.0
-
     def combine(self, *, resolution=None) -> SceneExt:
         if len(self.scenes) == 0:
-            raise ValueError("cannot blend MultiSceneExt with 0 scenes")
+            raise ValueError("cannot combine MultiSceneExt with 0 scenes")
+        from time import time
+        start_time = time()
         self.group_loaded()
-        combined_scn = self.resample_all_to_eqc(resolution=resolution, reduce_data=False).blend(EqcMean.blend_func)
+        print(f"2. group_loaded: {time() - start_time}")
+        eqc_mscn = self.resample_all_to_eqc(resolution=resolution, reduce_data=False)
+        print(f"2. resample_to_eqc: {time() - start_time}")
+        combined_scn = eqc_mscn.blend(EqcBlend.blend_func)
+        print(f"2. blend: {time() - start_time}")
         combined_scn_ext = SceneExt.from_scene(combined_scn)
-        print(combined_scn_ext.area)
-        print(combined_scn_ext._datasets.values())
+        print(f"2. to_scn_ext: {time() - start_time}")
         combined_scn_ext.load(self.loaded)
+        print(f"2. loaded: {time() - start_time}")
         return combined_scn_ext

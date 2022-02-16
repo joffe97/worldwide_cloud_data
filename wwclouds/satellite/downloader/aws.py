@@ -32,6 +32,22 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
         self.bucket = bucket
         self.product = product
 
+    def _iter_aws_by_prefix(self, prefix) -> Iterator[dict[str, any]]:
+        kwargs = {"Bucket": self.bucket, "Prefix": prefix}
+        while True:
+            response = self.s3_client.list_objects_v2(**kwargs)
+            if "Contents" not in response:
+                response["Contents"] = []
+            for obj in response["Contents"]:
+                key = obj["Key"]
+                if not key.startswith(prefix):
+                    continue
+                yield obj
+            try:
+                kwargs["ContinuationToken"] = response["NextContinuationToken"]
+            except KeyError:
+                break
+
     @abc.abstractmethod
     def _get_aws_prefix_for_band(self, band: int, time: datetime) -> str:
         pass
@@ -45,21 +61,8 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
 
     def _get_all_file_entries_for_band_in_aws_directory(self, band: int, time: datetime) -> Iterator[FileEntry]:
         prefix = self._get_aws_prefix_for_band(band, time)
-        kwargs = {"Bucket": self.bucket, "Prefix": prefix}
-        while True:
-            response = self.s3_client.list_objects_v2(**kwargs)
-            if "Contents" not in response:
-                response["Contents"] = []
-            for obj in response["Contents"]:
-                key = obj["Key"]
-                if not key.startswith(prefix):
-                    continue
-                time = obj["LastModified"]
-                yield FileEntry(key, time)
-            try:
-                kwargs["ContinuationToken"] = response["NextContinuationToken"]
-            except KeyError:
-                break
+        for obj in self._iter_aws_by_prefix(prefix):
+            yield FileEntry(obj["Key"], obj["LastModified"])
 
     def _get_previous_keys_for_bands(self, bands: [int], time: datetime) -> [[str]]:
         return [self._get_previous_keys_for_band(band, time) for band in bands]

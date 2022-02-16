@@ -10,8 +10,8 @@ class _SatelliteMappingEntry:
 
 class SatelliteMapping:
     _MAPPING = {
-        SatelliteEnum.METOSAT8: _SatelliteMappingEntry(satellite_type.Metosat),
-        SatelliteEnum.METOSAT11: _SatelliteMappingEntry(satellite_type.Metosat),
+        SatelliteEnum.METEOSAT8: _SatelliteMappingEntry(satellite_type.Meteosat),
+        SatelliteEnum.METEOSAT11: _SatelliteMappingEntry(satellite_type.Meteosat),
         SatelliteEnum.GOES16: _SatelliteMappingEntry(satellite_type.NoaaGoes),
         SatelliteEnum.GOES17: _SatelliteMappingEntry(satellite_type.NoaaGoes),
         SatelliteEnum.HIMAWARI8: _SatelliteMappingEntry(satellite_type.Himawari)

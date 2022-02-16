@@ -22,7 +22,7 @@ if __name__ == '__main__':
     utctime = datetime(2022, 1, 12, 15, 29)
     start = time.time()
     # collection = Collection(SatelliteEnum.all())
-    collection = SatelliteCollection([SatelliteEnum.METOSAT8, SatelliteEnum.GOES16])
+    collection = SatelliteCollection([SatelliteEnum.METEOSAT8, SatelliteEnum.GOES16])
     file_readers = collection.download_all(utctime=utctime)
     print(time.time() - start)
     print(file_readers)

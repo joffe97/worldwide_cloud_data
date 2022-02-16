@@ -11,45 +11,45 @@ from wwclouds import config
 from wwclouds.satellite.satellite_enum import SatelliteEnum
 
 
-class MetosatType(Enum):
-    METOSAT8 = auto()
-    METOSAT11 = auto()
+class MeteosatType(Enum):
+    METEOSAT8 = auto()
+    METEOSAT11 = auto()
 
     @property
     def collection_id(self):
-        if self == MetosatType.METOSAT8:
+        if self == MeteosatType.METEOSAT8:
             return "EO:EUM:DAT:MSG:HRSEVIRI-IODC"
-        elif self == MetosatType.METOSAT11:
+        elif self == MeteosatType.METEOSAT11:
             return "EO:EUM:DAT:MSG:HRSEVIRI"
 
     @staticmethod
-    def from_str(string: str) -> "MetosatType":
-        return eval(f"MetosatType.{string}")
+    def from_str(string: str) -> "MeteosatType":
+        return getattr(MeteosatType, string)
 
     @staticmethod
-    def from_satellite_flag(satellite_enum: SatelliteEnum) -> "MetosatType":
-        return MetosatType.from_str(satellite_enum.name)
+    def from_satellite_flag(satellite_enum: SatelliteEnum) -> "MeteosatType":
+        return MeteosatType.from_str(satellite_enum.name)
 
 
-class Metosat(Downloader):
+class Meteosat(Downloader):
     def __init__(self, satellite_enum: SatelliteEnum):
-        metosat_type = MetosatType.from_satellite_flag(satellite_enum)
+        meteosat_type = MeteosatType.from_satellite_flag(satellite_enum)
         super().__init__(
-            subdir=f"{metosat_type.name.lower()}/{metosat_type.collection_id}",
+            subdir=f"{meteosat_type.name.lower()}/{meteosat_type.collection_id}",
             reader="seviri_l1b_native",
             update_frequency=timedelta(minutes=15)
         )
-        self.collection_id = metosat_type.collection_id
+        self.collection_id = meteosat_type.collection_id
 
     @property
     def url_friendly_collection_id(self) -> str:
         return quote_plus(self.collection_id)
 
     def __get_access_key(self) -> str:
-        token_url = config.METOSAT_API_ENDPOINT + "/token"
+        token_url = config.METEOSAT_API_ENDPOINT + "/token"
         response = requests.post(
             token_url,
-            auth=requests.auth.HTTPBasicAuth(config.METOSAT_CONSUMER_KEY, config.METOSAT_CONSUMER_SECRET),
+            auth=requests.auth.HTTPBasicAuth(config.METEOSAT_CONSUMER_KEY, config.METEOSAT_CONSUMER_SECRET),
             data={'grant_type': 'client_credentials'},
             headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
@@ -58,7 +58,7 @@ class Metosat(Downloader):
     def __get_product_url_for_time(self, time: datetime) -> str:
         url_ending = f"collections/{self.url_friendly_collection_id}/dates/{time.year}/{time.month:02.0f}" \
                      f"/{time.day:02.0f}/times/{time.hour:02.0f}/{time.minute:02.0f}/products"
-        return f"{config.METOSAT_BROWSE_ENDPOINT}/{url_ending}"
+        return f"{config.METEOSAT_BROWSE_ENDPOINT}/{url_ending}"
 
     def __get_product_info_for_time(self, time: datetime) -> dict:
         url = self.__get_product_url_for_time(time)
@@ -74,7 +74,7 @@ class Metosat(Downloader):
 
     def __get_download_url_for_product(self, product_id: str) -> str:
         url_ending = f"collections/{self.url_friendly_collection_id}/products/{product_id}/entry?name={product_id}.nat"
-        return f"{config.METOSAT_DOWNLOAD_ENDPOINT}/{url_ending}"
+        return f"{config.METEOSAT_DOWNLOAD_ENDPOINT}/{url_ending}"
 
     def __get_download_url_for_time(self, time: datetime) -> str:
         product_id = self.__get_product_id_for_time(time)
@@ -99,8 +99,8 @@ class Metosat(Downloader):
 
 
 if __name__ == '__main__':
-    metosat = Metosat(SatelliteEnum.METOSAT8)
-    file_reader = metosat.download(time=datetime(2022, 1, 12, 15, 29))
+    meteosat = Meteosat(SatelliteEnum.METEOSAT8)
+    file_reader = meteosat.download(time=datetime(2022, 1, 12, 15, 29))
     scn = file_reader.read_to_scene()
     print(scn.available_dataset_ids())
     my_scene = 1.5

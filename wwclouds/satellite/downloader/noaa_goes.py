@@ -1,5 +1,7 @@
 from enum import Enum, auto
 from datetime import datetime, timedelta
+from typing import Union
+from functools import lru_cache
 
 from wwclouds.satellite.downloader.aws import Aws
 from wwclouds.satellite.satellite_enum import SatelliteEnum
@@ -15,7 +17,7 @@ class NoaaGoesType(Enum):
 
     @staticmethod
     def from_str(string: str) -> "NoaaGoesType":
-        return eval(f"NoaaGoesType.{string}")
+        return getattr(NoaaGoesType, string)
 
     @staticmethod
     def from_satellite_flag(satellite_enum: SatelliteEnum) -> "NoaaGoesType":
@@ -36,8 +38,16 @@ class NoaaGoes(Aws):
         day_of_year = time.timetuple().tm_yday
         return f"{self.product}/{time.year}/{day_of_year:03.0f}/{time.hour:02.0f}"
 
+    @lru_cache(maxsize=32)
+    def __get_scan_mode(self, time: datetime) -> Union[int, None]:
+        prefix = f"{self.__get_aws_directory(time)}/OR_{self.product}-M"
+        scan_mode_index = len(prefix)
+        for obj in self._iter_aws_by_prefix(prefix):
+            return int(obj["Key"][scan_mode_index])
+        return None
+
     def _get_aws_prefix_for_band(self, band: int, time: datetime) -> str:
-        return f"{self.__get_aws_directory(time)}/OR_{self.product}-M6C{band:02.0f}"
+        return f"{self.__get_aws_directory(time)}/OR_{self.product}-M{self.__get_scan_mode(time)}C{band:02.0f}"
 
     def _get_previous_keys_for_band(self, band: int, time: datetime, retries: int = 3) -> [str]:
         file_entries = list(self._get_all_file_entries_for_band_in_aws_directory(band, time))
