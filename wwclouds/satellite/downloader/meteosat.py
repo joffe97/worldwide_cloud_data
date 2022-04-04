@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import requests
 from urllib.parse import quote_plus
 from enum import Enum, auto
-from typing import Union, List
+from typing import Union, List, Optional
 
 from wwclouds.satellite.downloader.downloader import Downloader
 from wwclouds.satellite.downloader.file_reader import FileReader
@@ -45,6 +45,9 @@ class Meteosat(Downloader):
     def url_friendly_collection_id(self) -> str:
         return quote_plus(self.collection_id)
 
+    def _get_previous_scan_start_time_for_band(self, band: str, time: datetime):
+        return self.get_previous_update_time(time)
+
     def __get_access_key(self) -> str:
         token_url = config.METEOSAT_API_ENDPOINT + "/token"
         response = requests.post(
@@ -65,12 +68,15 @@ class Meteosat(Downloader):
         response = requests.get(url, params={"format": "json"})
         return response.json()
 
-    def __get_product_id_for_time(self, time: datetime, retries: int = 3) -> str:
+    def __get_product_id_for_time(self, time: datetime, retries: int = 3) -> Optional[str]:
+        if retries <= 0:
+            return None
         info = self.__get_product_info_for_time(time)
         products = info.get("products")
-        if not products and retries >= 1:
+        if not products:
             return self.__get_product_id_for_time(time - self.update_frequency, retries - 1)
-        return products[0]["id"]
+        product = products[0]
+        return product["id"]
 
     def __get_download_url_for_product(self, product_id: str) -> str:
         url_ending = f"collections/{self.url_friendly_collection_id}/products/{product_id}/entry?name={product_id}.nat"
@@ -80,8 +86,9 @@ class Meteosat(Downloader):
         product_id = self.__get_product_id_for_time(time)
         return self.__get_download_url_for_product(product_id)
 
-    def _download(self, bands: Union[List[int], None], time: datetime) -> [str]:
-        download_url = self.__get_download_url_for_time(time)
+    def _download(self, bands: Optional[List[str]], time: datetime) -> [str]:
+        previous_updated_time = self.get_previous_update_time(time)
+        download_url = self.__get_download_url_for_time(previous_updated_time)
         filepath = self.get_local_file_path(download_url)
         if not self.file_is_downloaded(download_url):
             access_token = self.__get_access_key()

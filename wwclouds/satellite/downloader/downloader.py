@@ -1,33 +1,37 @@
 from datetime import datetime, timedelta
 import os
 import abc
-from typing import Union, List
+from typing import List, Optional
 import time as t
 from glob import glob
-from pathlib import Path
 
-import wwclouds
 import wwclouds.config as config
 from .file_reader import FileReader
 
 
 class Downloader(metaclass=abc.ABCMeta):
-    data_dir = f"{wwclouds.ROOT_DIR}/{config.DATA_PATH}"
-
     def __init__(self,
                  subdir: str,
                  reader: str,
                  update_frequency: timedelta,
-                 all_bands: Union[List[int], List[str], None] = None
+                 all_bands: Optional[List[str]] = None
                  ):
-        self.path = f"{self.data_dir}/{subdir}"
+        self.path = f"{config.DATA_PATH}/{subdir}"
         self.reader = reader
         self.update_frequency = update_frequency
         self.all_bands = all_bands
 
     @abc.abstractmethod
-    def _download(self, bands: Union[List[int], None], time: datetime) -> [str]:
+    def _download(self, bands: Optional[List[str]], time: datetime) -> [str]:
         pass
+
+    @abc.abstractmethod
+    def _get_previous_scan_start_time_for_band(self, band: str, time: datetime) -> datetime:
+        pass
+
+    def get_first_scan_start_time_for_bands(self, bands: list[str], time: datetime) -> datetime:
+        scan_start_times = [self._get_previous_scan_start_time_for_band(band, time) for band in bands]
+        return min(scan_start_times)
 
     def create_dir_if_not_exist(self):
         if not os.path.exists(self.path):
@@ -51,15 +55,12 @@ class Downloader(metaclass=abc.ABCMeta):
         last_update_minute = (time.minute // update_frequency_seconds) * update_frequency_seconds
         return datetime(time.year, time.month, time.day, time.hour, last_update_minute)
 
-    def download(self, bands: Union[List[int], None] = None, time: datetime = datetime.utcnow()) -> FileReader:
-        if bands is None:
-            bands = self.all_bands
-
-        previous_updated_time = self.get_previous_update_time(time)
+    def download(self, bands: Optional[List[Optional[str]]] = None, time: datetime = datetime.utcnow()) -> FileReader:
+        if None in bands:
+            bands = None
         self.create_dir_if_not_exist()
-
         start = t.time()
-        file_paths = self._download(bands, previous_updated_time)
+        file_paths = self._download(bands, time)
         file_reader = FileReader(file_paths, reader=self.reader)
         print(t.time() - start)
         return file_reader

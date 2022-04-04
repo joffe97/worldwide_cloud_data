@@ -1,5 +1,5 @@
-import time
 from datetime import datetime
+from typing import Optional
 
 from wwclouds.satellite.satellite_enum import SatelliteEnum
 from wwclouds.satellite.satellite_mapping import SatelliteMapping
@@ -11,45 +11,31 @@ class SatelliteCollection:
     def __init__(self, satellite_enums: [SatelliteEnum]):
         self.satellites: [SatelliteType] = list(map(SatelliteMapping.get_satellite_type, satellite_enums))
 
-    def download_all(self, bands: [int] = None, utctime: datetime = datetime.utcnow()) -> [downloader.FileReader]:
-        return [satellite.downloader.download(bands, utctime) for satellite in self.satellites]
+    def get_scan_start_times(self, frequencies: list[float], utctime: datetime) -> list[datetime]:
+        scan_start_times = []
+        for satellite in self.satellites:
+            bands = satellite.get_band_for_frequencies(frequencies)
+            scan_start_time = satellite.downloader.get_first_scan_start_time_for_bands(bands, utctime)
+            scan_start_times.append(scan_start_time)
+        return sorted(scan_start_times)
 
-    def download_all_most_recent(self, bands: [int] = None) -> [downloader.FileReader]:
-        return self.download_all(bands)
+    def get_scan_times_str(self, frequencies: list[float], utctime: datetime) -> str:
+        scan_times = self.get_scan_start_times(frequencies, utctime)
+        day_str = scan_times[0].strftime("%y%m%d")
+        times_str_list = list(map(str, (
+            scan_time.hour * 3600 + scan_time.minute * 60 + scan_time.second for scan_time in scan_times
+        )))
+        return f"{day_str}_{''.join(times_str_list)}"
+
+    def download_all(self, frequencies: Optional[list[float]], utctime: datetime) -> [downloader.FileReader]:
+        if frequencies is None:
+            frequencies = []
+        file_readers = []
+        for satellite in self.satellites:
+            bands = satellite.get_band_for_frequencies(frequencies)
+            file_readers.append(satellite.downloader.download(bands, utctime))
+        return file_readers
 
 
 if __name__ == '__main__':
-    utctime = datetime(2022, 1, 12, 15, 29)
-    start = time.time()
-    # collection = Collection(SatelliteEnum.all())
-    collection = SatelliteCollection([SatelliteEnum.METEOSAT8, SatelliteEnum.GOES16])
-    file_readers = collection.download_all(utctime=utctime)
-    print(time.time() - start)
-    print(file_readers)
-
-    import matplotlib.pyplot as plt
-    from pyresample import create_area_def
-    from satpy import MultiScene
-    from satpy.composites import CloudCompositor
-    from satpy.writers import to_image, get_enhanced_image
-
-    my_area = create_area_def('my_area', {'a': '6378137', 'h': '35785863', 'lon_0': '140.7', 'no_defs': 'None', 'proj': 'geos', 'rf': '298.257024882273', 'type': 'crs', 'units': 'm', 'x_0': '0', 'y_0': '0'},
-                              width=3000, height=3000,
-                              units='degrees')
-
-    my_band = "fog"
-
-    for file_reader in file_readers:
-        scn = file_reader.read_to_scene()
-        print(scn.available_composite_names())
-        scn.load([my_band])
-        # new_scn = scn.resample()
-
-        # img = get_enhanced_image(new_scn[my_band])
-
-        plt.figure()
-        # img.data.plot.imshow(vmin=0, vmax=1, rgb="bands")
-        # plt.show()
-        plt.figure()
-        plt.imshow(scn[my_band])
-        plt.show()
+    pass

@@ -3,19 +3,11 @@ import boto3.s3.transfer as s3transfer
 from botocore import UNSIGNED
 from botocore.config import Config
 from datetime import datetime, timedelta
-from typing import Iterator, Union, List
-import os
-import time as t
+from typing import Iterator
 import abc
+import functools
 
 from wwclouds.satellite.downloader.downloader import Downloader
-from wwclouds.satellite.downloader.file_reader import FileReader
-
-
-class FileEntry:
-    def __init__(self, key: str, time: datetime):
-        self.key = key
-        self.time = time
 
 
 class Aws(Downloader, metaclass=abc.ABCMeta):
@@ -31,6 +23,18 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
         )
         self.bucket = bucket
         self.product = product
+
+    @abc.abstractmethod
+    def _get_aws_prefix_for_band(self, band: str, time: datetime) -> str:
+        pass
+
+    # @abc.abstractmethod
+    # def _get_previous_keys_for_band(self, band: str, time: datetime, retries: int = 3) -> [str]:
+        # pass
+
+    @abc.abstractmethod
+    def _get_scan_start_time_from_object_key(self, object_key: str) -> datetime:
+        pass
 
     def _iter_aws_by_prefix(self, prefix) -> Iterator[dict[str, any]]:
         kwargs = {"Bucket": self.bucket, "Prefix": prefix}
@@ -48,33 +52,38 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
             except KeyError:
                 break
 
-    @abc.abstractmethod
-    def _get_aws_prefix_for_band(self, band: int, time: datetime) -> str:
-        pass
-
-    @abc.abstractmethod
-    def _get_previous_keys_for_band(self, band: int, time: datetime, retries: int = 3) -> [str]:
-        pass
-
     def _file_posthandler(self, filepath: str) -> str:
         return filepath
 
-    def _get_all_file_entries_for_band_in_aws_directory(self, band: int, time: datetime) -> Iterator[FileEntry]:
+    def _get_all_object_keys_for_band_in_aws_directory(self, band: str, time: datetime) -> str:
         prefix = self._get_aws_prefix_for_band(band, time)
         for obj in self._iter_aws_by_prefix(prefix):
-            yield FileEntry(obj["Key"], obj["LastModified"])
+            yield obj["Key"]
 
-    def _get_previous_keys_for_bands(self, bands: [int], time: datetime) -> [[str]]:
-        return [self._get_previous_keys_for_band(band, time) for band in bands]
+    @functools.lru_cache(32)
+    def _get_previous_object_keys_for_band(self, band: str, time: datetime, retries: int = 3) -> list[str]:
+        if retries < 0:
+            return []
+        object_keys = list(self._get_all_object_keys_for_band_in_aws_directory(band, time))
+        best_object_start_time = None
+        for object_key in object_keys:
+            object_start_time = self._get_scan_start_time_from_object_key(object_key)
+            if object_start_time > time:
+                continue
+            elif best_object_start_time is None or object_start_time > best_object_start_time:
+                best_object_start_time = object_start_time
+        if best_object_start_time is None or best_object_start_time > time:
+            return self._get_previous_object_keys_for_band(band, time - self.update_frequency, retries - 1)
+        return list(filter(lambda key: self._get_scan_start_time_from_object_key(key) == best_object_start_time, object_keys))
 
-    # Testing band 7 downloads
-    # Himawari download - Concurrent: 16.9 sec. Non-concurrent: 82.1 sec.
-    #                                 19.5                      79.2
-    #                                 17.0                      80.4
-    # Goes-17 download  - Concurrent: 33.3 sec. Non-concurrent: 37.7 sec.
-    #                                 47.0                      38.7
-    #                                 40.7                      30.4
-    def _download(self, bands: [int], time: datetime) -> [str]:
+    def _get_previous_scan_start_time_for_band(self, band: str, time: datetime) -> datetime:
+        object_key = self._get_previous_object_keys_for_band(band, time)[0]
+        return self._get_scan_start_time_from_object_key(object_key)
+
+    def _get_previous_keys_for_bands(self, bands: [str], time: datetime) -> [[str]]:
+        return [self._get_previous_object_keys_for_band(band, time) for band in bands]
+
+    def _download(self, bands: [str], time: datetime) -> [str]:
         keys_list = self._get_previous_keys_for_bands(bands, time)
         file_paths = []
         s3t = s3transfer.create_transfer_manager(self.s3_client, self.transfer_config)

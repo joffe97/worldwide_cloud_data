@@ -29,6 +29,12 @@ class SceneExt(Scene):
             setattr(scene_ext, key, value)
         return scene_ext
 
+    @staticmethod
+    def from_datasets(datasets: list[DataArray]) -> "SceneExt":
+        print()
+        scene_ext = SceneExt()
+        return scene_ext
+
     @property
     def __first_band(self) -> DataArray:
         return next(band for band in self)

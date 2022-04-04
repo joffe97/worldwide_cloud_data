@@ -14,6 +14,20 @@ class MultiSceneExt(MultiScene):
         super().__init__(self.__to_scenes_ext(scenes))
         self.loaded: list[Union[str, float, int]] = []
 
+        self.__shared_dataset_ids_override: Union[set[DataID], None] = None
+
+    @property
+    def shared_dataset_ids(self) -> set[DataID]:
+        return self.__shared_dataset_ids_override if self.__shared_dataset_ids_override is not None \
+            else super().shared_dataset_ids
+
+    @shared_dataset_ids.setter
+    def shared_dataset_ids(self, value):
+        self.__shared_dataset_ids_override = value
+
+    def remove_override_for_shared_dataset_ids(self) -> None:
+        self.__shared_dataset_ids_override = None
+
     @property
     def scenes_ext_sorted_by_longitude(self) -> list[SceneExt]:
         return list(sorted(self.scenes, key=lambda scn: scn.lon_0))
@@ -62,10 +76,10 @@ class MultiSceneExt(MultiScene):
         for key, value in old_vars.items():
             setattr(multi_scene_ext, key, value)
 
-    def copy(self, scenes: Union[list[Scene], list[SceneExt]] = None) -> "MultiSceneExt":
+    def copy(self, override_scenes: Union[list[Scene], list[SceneExt]] = None) -> "MultiSceneExt":
         old_vars = dict((key, value) for (key, value) in vars(self).items())
-        multi_scene_ext = MultiSceneExt(scenes)
-        if scenes is not None:
+        multi_scene_ext = MultiSceneExt(override_scenes)
+        if override_scenes is not None:
             old_vars.pop("_scenes")
             old_vars.pop("_scene_gen")
         for key, value in old_vars.items():
@@ -75,6 +89,13 @@ class MultiSceneExt(MultiScene):
     def load(self, query, *args, **kwargs) -> None:
         super().load(query, *args, **kwargs)
         self.loaded.extend(query)
+
+    def unload(self, keepables: Iterable):
+        for scene in self.scenes:
+            scene.unload(keepables)
+        for index, band in enumerate(self.loaded):
+            if band not in keepables:
+                self.loaded.pop(index)
 
     def __get_group_by_wavelength(self, wavelength: float) -> Union[tuple[DataQuery, list[str]], None]:
         filter_func = lambda data_id: wavelength in data_id["wavelength"]
@@ -99,10 +120,12 @@ class MultiSceneExt(MultiScene):
             matching_data_id_names
         )
 
-    def group_loaded(self):
+    def group_loaded(self) -> set[DataID]:
         group_tuples = map(self.__get_group_by_wavelength, self.loaded)
         legal_groups = dict(filter(lambda tup: tup is not None, group_tuples))
+        prev_shared_datasets = self.shared_dataset_ids
         self.group(legal_groups)
+        return self.shared_dataset_ids - prev_shared_datasets
 
     def imshow_all_scenes(self, query: Union[str, float]):
         for scn in self.scenes:
@@ -112,22 +135,16 @@ class MultiSceneExt(MultiScene):
         new_multi_scn = super().resample(destination, **kwargs)
         return self.copy(new_multi_scn.scenes)
 
-    def resample_all_to_eqc(self, *, resolution=None, **kwargs) -> "MultiScene":
-        return MultiScene([scn.resample_to_eqc_area(resolution=resolution, **kwargs) for scn in self.scenes])
+    def resample_all_to_eqc(self, *, resolution=None, **kwargs) -> "MultiSceneExt":
+        return MultiSceneExt([scn.resample_to_eqc_area(resolution=resolution, **kwargs) for scn in self.scenes])
 
     def combine(self, *, resolution=None) -> SceneExt:
         if len(self.scenes) == 0:
             raise ValueError("cannot combine MultiSceneExt with 0 scenes")
-        from time import time
-        start_time = time()
-        self.group_loaded()
-        print(f"2. group_loaded: {time() - start_time}")
+        groups = self.group_loaded()
         eqc_mscn = self.resample_all_to_eqc(resolution=resolution, reduce_data=False)
-        print(f"2. resample_to_eqc: {time() - start_time}")
+        eqc_mscn.shared_dataset_ids = groups
         combined_scn = eqc_mscn.blend(EqcBlend.blend_func)
-        print(f"2. blend: {time() - start_time}")
         combined_scn_ext = SceneExt.from_scene(combined_scn)
-        print(f"2. to_scn_ext: {time() - start_time}")
         combined_scn_ext.load(self.loaded)
-        print(f"2. loaded: {time() - start_time}")
         return combined_scn_ext

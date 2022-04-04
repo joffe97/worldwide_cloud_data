@@ -17,7 +17,7 @@ RUN apt-get install python3.9-distutils -y
 RUN apt-get install python3-apt -y
 RUN apt-get install python3.9 -y 
 
-RUN curl -sSL https://bootstrap.pypa.io/pip/3.6/get-pip.py --output get-pip.py
+RUN curl -sSL https://bootstrap.pypa.io/pip/3.6/get-pip.py --product get-pip.py
 RUN python3.9 get-pip.py
 RUN python3.9 -m pip install --upgrade pip
 
