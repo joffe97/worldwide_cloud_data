@@ -7,8 +7,7 @@ import numpy as np
 from pyresample import AreaDefinition
 from datetime import datetime
 from enum import Enum, auto
-from geopy import distance
-from typing import Iterator
+from typing import Callable
 
 
 class Axis(Enum):
@@ -35,10 +34,12 @@ class Axis(Enum):
 
 
 class EqcBlend:
-    def __init__(self, data_arrays: list[xr.DataArray]):
+    def __init__(self, data_arrays: list[xr.DataArray],
+                 latitude_range: tuple[float, float] = (-Axis.LAT.value // 2, Axis.LAT.value // 2)):
         if len(data_arrays) == 0:
             raise ValueError("cannot create EqcMean object with 0 DataArrays")
         self.data_arrays = data_arrays
+        self.latitude_range = latitude_range
         self.lon_delta_step, self.lat_delta_step = self.__get_lonlats_delta_steps(20)
 
         self.earth_array = np.empty((self.lat_len, self.lon_len))
@@ -197,26 +198,38 @@ class EqcBlend:
         lon_middle = EqcBlend.__get_lon_middle(lon_a, lon_b)
         return EqcBlend.__get_lon_diff(lon_middle, lon) <= range_width / 2
 
-    def __add_data_array(self, data_array: xr.DataArray, from_longitude: float, to_longitude: float) -> None:
+    @staticmethod
+    def __is_between_latitudes(lat: float, lat_a: float, lat_b: float) -> bool:
+        lat_min, lat_max = sorted((lat_a, lat_b))
+        return lat_min <= lat <= lat_max
+
+    def __get_indexes_from_axis(self, axis_values: list[float], from_axis_val: float, to_axis_val: float,
+                                is_between_func: Callable[[float, float, float], bool]) -> list[int]:
+        indexes = []
+        for index, lon in enumerate(axis_values):
+            if is_between_func(lon, from_axis_val, to_axis_val):
+                if len(indexes) == 0:
+                    indexes.append((index - 1) % len(axis_values))
+                indexes.append(index)
+            elif len(indexes) != 0:
+                indexes.append(index)
+                break
+        return indexes
+
+    def __add_data_array(self, data_array: xr.DataArray, from_longitude: float, to_longitude: float,
+                         from_latitude: float, to_latitude: float) -> None:
         values = data_array.values
         area: AreaDefinition = data_array.attrs["area"]
         lons, lats = area.get_lonlats()
         longitude_list = lons[0]
         latitude_list = list(reversed(list(map(lambda val: val[0], lats))))
 
-        lon_indexes = []
-        for index, lon in enumerate(longitude_list):
-            if self.__is_between_longitudes(lon, from_longitude, to_longitude):
-                if len(lon_indexes) == 0:
-                    lon_indexes.append((index - 1) % len(longitude_list))
-                lon_indexes.append(index)
-            elif len(lon_indexes) != 0:
-                lon_indexes.append(index)
-                break
+        lon_indexes = self.__get_indexes_from_axis(longitude_list, from_longitude, to_longitude, self.__is_between_longitudes)
+        lat_indexes = self.__get_indexes_from_axis(latitude_list, from_latitude, to_latitude, self.__is_between_latitudes)
 
-        for lat_index, value_row in enumerate(values):
+        for lat_index in lat_indexes:
             for lon_index in lon_indexes:
-                value = value_row[lon_index]
+                value = values[lat_index][lon_index]
                 if np.isnan(value):
                     continue
                 new_lon_index, new_lat_index = self.__translate_coords_to_earth_array_indexes(
@@ -259,17 +272,18 @@ class EqcBlend:
             attrs=attrs
         )
 
-    def blend(self) -> None:
+    def blend(self) -> xr.DataArray:
         lon_edges = self.__get_data_array_edge_longitudes()
         for index in range(len(lon_edges)):
             print("BAM!")
-            edge1 = lon_edges[index]
-            edge2 = lon_edges[(index + 1) % len(lon_edges)]
-            data_array = self.__get_data_array_between_longitudes(edge1, edge2)
-            self.__add_data_array(data_array, edge1, edge2)
+            lon_edge1 = lon_edges[index]
+            lon_edge2 = lon_edges[(index + 1) % len(lon_edges)]
+            data_array = self.__get_data_array_between_longitudes(lon_edge1, lon_edge2)
+            self.__add_data_array(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+        return self.as_data_array()
 
     @staticmethod
     def blend_func(data_arrays: list[xr.DataArray]) -> xr.DataArray:
-        eqc_mean = EqcBlend(data_arrays)
+        eqc_mean = EqcBlend(data_arrays, (-70, 70))
         eqc_mean.blend()
         return eqc_mean.as_data_array()

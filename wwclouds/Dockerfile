@@ -17,7 +17,7 @@ RUN apt-get install python3.9-distutils -y
 RUN apt-get install python3-apt -y
 RUN apt-get install python3.9 -y 
 
-RUN curl -sSL https://bootstrap.pypa.io/pip/3.6/get-pip.py --product get-pip.py
+RUN curl -sSL https://bootstrap.pypa.io/pip/3.6/get-pip.py --output get-pip.py
 RUN python3.9 get-pip.py
 RUN python3.9 -m pip install --upgrade pip
 
@@ -26,6 +26,7 @@ RUN add-apt-repository ppa:ubuntugis/ppa
 RUN apt-get update 
 RUN apt-get install gdal-bin=3.3.2+dfsg-2~focal2 -y 
 RUN apt-get install libgdal-dev=3.3.2+dfsg-2~focal2 -y
+RUN apt-get install ffmpeg libsm6 libxext6 -y
 
 RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
@@ -35,4 +36,4 @@ RUN python3.9 -m pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python3.9", "." ]
+ENTRYPOINT ["python3.9", ".", "--output", "imagevisual", "--resolution", "80000"]

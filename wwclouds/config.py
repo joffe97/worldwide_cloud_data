@@ -2,7 +2,7 @@ import os
 CUR_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(CUR_DIR, '..'))
 
-DATA_PATH = f"{CUR_DIR}/datas"
+DATA_PATH = f"{CUR_DIR}/data"
 DATA_PATH_MAPNIK = f"{DATA_PATH}/mapnik"
 DATA_PATH_WORLD_MAP = f"{DATA_PATH_MAPNIK}/world_map"
 DATA_PATH_PRODUCT = f"{DATA_PATH}/product"

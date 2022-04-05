@@ -2,9 +2,7 @@ import pandas as mapnik
 from typing import Union
 import cv2
 import numpy as np
-
-
-DATA_PATH_MAPNIK = "/home/joachim/Documents/BachelorProject/wwclouds/data/mapnik"
+import pathlib
 
 
 class WorldMap:
@@ -30,16 +28,20 @@ class WorldMap:
         return world_map, image
 
     @property
+    def directory(self) -> str:
+        return str(pathlib.Path(__file__).parent.resolve())
+
+    @property
     def filename(self) -> str:
-        return f"world_map.png"
+        return "world_map.png"
 
     @property
     def filepath(self) -> str:
-        return f"{DATA_PATH_MAPNIK}/{self.filename}"
+        return f"{self.directory}/{self.filename}"
 
     @property
     def shapefile_path(self) -> str:
-        return f"{DATA_PATH_MAPNIK}/world_borders.shp"
+        return f"{self.directory}/world_borders.shp"
 
     @property
     def image(self):

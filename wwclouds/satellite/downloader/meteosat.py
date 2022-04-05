@@ -1,3 +1,4 @@
+import functools
 import os.path
 from datetime import datetime, timedelta
 import requests
@@ -82,6 +83,7 @@ class Meteosat(Downloader):
         url_ending = f"collections/{self.url_friendly_collection_id}/products/{product_id}/entry?name={product_id}.nat"
         return f"{config.METEOSAT_DOWNLOAD_ENDPOINT}/{url_ending}"
 
+    @functools.lru_cache(32)
     def __get_download_url_for_time(self, time: datetime) -> str:
         product_id = self.__get_product_id_for_time(time)
         return self.__get_download_url_for_product(product_id)

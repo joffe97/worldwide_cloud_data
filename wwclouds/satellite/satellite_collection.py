@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+import functools
 
 from wwclouds.satellite.satellite_enum import SatelliteEnum
 from wwclouds.satellite.satellite_mapping import SatelliteMapping
@@ -19,13 +20,13 @@ class SatelliteCollection:
             scan_start_times.append(scan_start_time)
         return sorted(scan_start_times)
 
-    def get_scan_times_str(self, frequencies: list[float], utctime: datetime) -> str:
+    def get_scan_times_strings(self, frequencies: list[float], utctime: datetime) -> tuple[str, str]:
         scan_times = self.get_scan_start_times(frequencies, utctime)
-        day_str = scan_times[0].strftime("%y%m%d")
-        times_str_list = list(map(str, (
-            scan_time.hour * 3600 + scan_time.minute * 60 + scan_time.second for scan_time in scan_times
-        )))
-        return f"{day_str}_{''.join(times_str_list)}"
+        day_str = scan_times[0].strftime("%y%m%d").zfill(6)
+        times_str_list = list(
+            str(scan_time.hour * 3600 + scan_time.minute * 60 + scan_time.second).zfill(5) for scan_time in scan_times
+        )
+        return day_str, ''.join(times_str_list)
 
     def download_all(self, frequencies: Optional[list[float]], utctime: datetime) -> [downloader.FileReader]:
         if frequencies is None:
