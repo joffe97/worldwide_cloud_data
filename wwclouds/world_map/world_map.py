@@ -1,4 +1,5 @@
 import pandas as mapnik
+# import mapnik
 from typing import Union
 import cv2
 import numpy as np
@@ -110,3 +111,8 @@ class WorldMap:
 
     def save_as_png(self, filepath):
         cv2.imwrite(filepath, self.image)
+
+
+if __name__ == '__main__':
+    wwmap = WorldMap((10000, 5000), load=True)
+    wwmap.create_image()

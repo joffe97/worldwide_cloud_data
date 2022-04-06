@@ -102,13 +102,13 @@ class System:
         comb_scene = multi_scn_ext.combine(resolution=self.resolution)
         return comb_scene
 
-    def __create_new_image(self):
+    def __create_new_image(self) -> XRImage:
         compositor = CloudCompositor("clouds", 230, transition_gamma=1.5)
         comb_scene = self.__get_comb_scene()
         composite = compositor([comb_scene[frequency] for frequency in self._frequencies])
         return to_image(composite)
 
-    def __get_existing_image(self):
+    def __get_existing_image(self) -> XRImage:
         with xarray.open_rasterio(self.__get_imagedata_path_for_format("tif"), parse_coordinates=True) as dataset:
             if "bands" not in dataset.dims:
                 dataset = dataset.swap_dims({"band": "bands"})
