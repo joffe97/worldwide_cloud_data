@@ -1,3 +1,5 @@
+import time
+
 from satpy import Scene, MultiScene, DataQuery, DataID
 from satpy.dataset.dataid import WavelengthRange
 from pyresample import create_area_def, AreaDefinition
@@ -144,7 +146,10 @@ class MultiSceneExt(MultiScene):
         groups = self.group_loaded()
         eqc_mscn = self.resample_all_to_eqc(resolution=resolution, reduce_data=False)
         eqc_mscn.shared_dataset_ids = groups
-        combined_scn = eqc_mscn.blend(EqcBlend.blend_func)
+        start_time = time.time()
+        eqc_blend = EqcBlend((-70, 70))
+        combined_scn = eqc_mscn.blend(eqc_blend)
+        print(time.time() - start_time)
         combined_scn_ext = SceneExt.from_scene(combined_scn)
         combined_scn_ext.load(self.loaded)
         return combined_scn_ext

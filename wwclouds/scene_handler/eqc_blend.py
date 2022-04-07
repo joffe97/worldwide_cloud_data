@@ -1,3 +1,6 @@
+import time
+
+import dask.array
 import xarray as xr
 import numpy as np
 from pyresample import AreaDefinition
@@ -5,6 +8,7 @@ from datetime import datetime
 from enum import Enum, auto
 from typing import Callable
 import multiprocessing as mp
+from multiprocessing import shared_memory
 
 
 class Axis(Enum):
@@ -31,16 +35,33 @@ class Axis(Enum):
 
 
 class EqcBlend:
-    def __init__(self, data_arrays: list[xr.DataArray],
-                 latitude_range: tuple[float, float] = (-Axis.LAT.value // 2, Axis.LAT.value // 2)):
-        if len(data_arrays) == 0:
-            raise ValueError("cannot create EqcMean object with 0 DataArrays")
-        self.data_arrays = data_arrays
+    def __init__(self, latitude_range: tuple[float, float] = (-Axis.LAT.value // 2, Axis.LAT.value // 2)):
         self.latitude_range = latitude_range
+
+        self.data_arrays = []
+        self.__data_array_values_map = None
+        self.lon_delta_step = None
+        self.lat_delta_step = None
+        self.shared_earth_array = None
+        self.__earth_array = None
+
+    def __call__(self, data_arrays: list[xr.DataArray]) -> xr.DataArray:
+        if len(data_arrays) == 0:
+            raise ValueError("cannot call EqcMean object with 0 DataArrays")
+        self.__init_data_arrays(data_arrays)
+        self.blend_mp()
+        return self.as_data_array()
+
+    def __del__(self):
+        self.shared_earth_array.close()
+        self.shared_earth_array.unlink()
+
+    def __init_data_arrays(self, data_arrays: list[xr.DataArray]):
+        self.data_arrays = data_arrays
+        self.__data_array_values_map = dict((id(data_array), data_array.values) for data_array in data_arrays)
         self.lon_delta_step, self.lat_delta_step = self.__get_lonlats_delta_steps(20)
 
-        self.earth_array = np.empty((self.lat_len, self.lon_len))
-        self.earth_array[:] = np.nan
+        self.shared_earth_array, self.__earth_array = self.__create_shared_earth_array()
 
     @property
     def lon_len(self) -> int:
@@ -60,6 +81,14 @@ class EqcBlend:
             self.data_arrays,
             key=lambda data_array: data_array.attrs["area"].proj_dict["lon_0"]
         )
+
+    @property
+    def __data_type(self) -> type:
+        return self.__get_values_from_data_array(self.__first_data_array)[0][0].dtype
+
+    @property
+    def __shape(self) -> (int, int):
+        return self.lat_len, self.lon_len
 
     @property
     def time_range(self) -> tuple[datetime, datetime]:
@@ -109,6 +138,16 @@ class EqcBlend:
             "area_extent": self.area_extent
         }
         return area.copy(**args)
+
+    def __get_values_from_data_array(self, data_array: xr.DataArray) -> np.ndarray:
+        return self.__data_array_values_map[id(data_array)]
+
+    def __create_shared_earth_array(self) -> (shared_memory.SharedMemory, np.ndarray):
+        size = np.dtype(self.__data_type).itemsize * np.prod(self.lat_len * self.lon_len)
+        shm = shared_memory.SharedMemory(create=True, size=size)
+        dst = np.ndarray(self.__shape, self.__data_type, buffer=shm.buf)
+        dst[:] = np.nan
+        return shm, dst
 
     def __get_axis_sorted_in_degrees(self, axis: Axis) -> np.ndarray:
         max_value = axis.degree_count
@@ -213,14 +252,14 @@ class EqcBlend:
                 break
         return indexes
 
-    def __add_data_array(self, data_array: xr.DataArray, from_longitude: float, to_longitude: float,
+    # def __add_data_array(self, data_array: xr.DataArray, from_longitude: float, to_longitude: float,
+                         # from_latitude: float, to_latitude: float) -> None:
+    def __add_data_array(self, values: np.ndarray, area: AreaDefinition, from_longitude: float, to_longitude: float,
                          from_latitude: float, to_latitude: float) -> None:
-        values = data_array.values
-        area: AreaDefinition = data_array.attrs["area"]
+        print("START")
         lons, lats = area.get_lonlats()
         longitude_list = lons[0]
         latitude_list = list(reversed(list(map(lambda val: val[0], lats))))
-
         lon_indexes = self.__get_indexes_from_axis(longitude_list, from_longitude, to_longitude, self.__is_between_longitudes)
         lat_indexes = self.__get_indexes_from_axis(latitude_list, from_latitude, to_latitude, self.__is_between_latitudes)
 
@@ -232,10 +271,8 @@ class EqcBlend:
                 new_lon_index, new_lat_index = self.__translate_coords_to_earth_array_indexes(
                     (longitude_list[lon_index], latitude_list[lat_index])
                 )
-                self.earth_array[new_lat_index][new_lon_index] = value
-
-    async def __add_data_array_async(self, *args, **kwargs) -> None:
-        self.__add_data_array(*args, **kwargs)
+                self.__earth_array[new_lat_index][new_lon_index] = value
+        print("END")
 
     def __get_data_array_edge_longitudes(self) -> list[float]:
         lons_sorted = sorted(data_array.attrs["area"].proj_dict["lon_0"] for data_array in self.data_arrays)
@@ -266,7 +303,7 @@ class EqcBlend:
             "area": self.area_def
         }
         return xr.DataArray(
-            self.earth_array,
+            self.__earth_array.copy(),
             dims=["y", "x"],
             coords=self.coords,
             attrs=attrs
@@ -279,10 +316,28 @@ class EqcBlend:
             lon_edge1 = lon_edges[index]
             lon_edge2 = lon_edges[(index + 1) % len(lon_edges)]
             data_array = self.__get_data_array_between_longitudes(lon_edge1, lon_edge2)
-            self.__add_data_array(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+            values = self.__get_values_from_data_array(data_array)
+            area: AreaDefinition = data_array.attrs["area"]
+            self.__add_data_array(values, area, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
 
-    @staticmethod
-    def blend_func(data_arrays: list[xr.DataArray]) -> xr.DataArray:
-        eqc_mean = EqcBlend(data_arrays, (-70, 70))
-        eqc_mean.blend()
-        return eqc_mean.as_data_array()
+    def blend_mp(self) -> None:
+        lon_edges = self.__get_data_array_edge_longitudes()
+        processes = []
+        for index in range(len(lon_edges)):
+            print("BAM!")
+            lon_edge1 = lon_edges[index]
+            lon_edge2 = lon_edges[(index + 1) % len(lon_edges)]
+            data_array = self.__get_data_array_between_longitudes(lon_edge1, lon_edge2)
+            values = self.__get_values_from_data_array(data_array)
+            area: AreaDefinition = data_array.attrs["area"]
+            # self.__add_data_array(values, area, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+            process = mp.Process(
+                target=self.__add_data_array,
+                args=(values, area, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+            )
+            processes.append(process)
+            # self.__add_data_array(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join()
