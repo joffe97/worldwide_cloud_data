@@ -1,13 +1,10 @@
-import statistics
-import time
-
 import xarray as xr
-import dask.array as da
 import numpy as np
 from pyresample import AreaDefinition
 from datetime import datetime
 from enum import Enum, auto
 from typing import Callable
+import multiprocessing as mp
 
 
 class Axis(Enum):
@@ -66,10 +63,10 @@ class EqcBlend:
 
     @property
     def time_range(self) -> tuple[datetime, datetime]:
-        print()
-        for data_array in self.data_arrays:
-            print(data_array.attrs["start_time"], data_array.attrs["end_time"])
-        print()
+        # print()
+        # for data_array in self.data_arrays:
+            # print(data_array.attrs["start_time"], data_array.attrs["end_time"])
+        # print()
         start_time = min(data_array.attrs["start_time"] for data_array in self.data_arrays)
         end_time = max(data_array.attrs["end_time"] for data_array in self.data_arrays)
         return start_time, end_time
@@ -237,6 +234,9 @@ class EqcBlend:
                 )
                 self.earth_array[new_lat_index][new_lon_index] = value
 
+    async def __add_data_array_async(self, *args, **kwargs) -> None:
+        self.__add_data_array(*args, **kwargs)
+
     def __get_data_array_edge_longitudes(self) -> list[float]:
         lons_sorted = sorted(data_array.attrs["area"].proj_dict["lon_0"] for data_array in self.data_arrays)
         edge_longitudes = []
@@ -272,7 +272,7 @@ class EqcBlend:
             attrs=attrs
         )
 
-    def blend(self) -> xr.DataArray:
+    def blend(self) -> None:
         lon_edges = self.__get_data_array_edge_longitudes()
         for index in range(len(lon_edges)):
             print("BAM!")
@@ -280,7 +280,6 @@ class EqcBlend:
             lon_edge2 = lon_edges[(index + 1) % len(lon_edges)]
             data_array = self.__get_data_array_between_longitudes(lon_edge1, lon_edge2)
             self.__add_data_array(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
-        return self.as_data_array()
 
     @staticmethod
     def blend_func(data_arrays: list[xr.DataArray]) -> xr.DataArray:

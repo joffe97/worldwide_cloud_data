@@ -157,7 +157,7 @@ class System:
 
     def __create_video(self):
         hours = 24
-        frames_per_hour = 1
+        frames_per_hour = 2
         fps = 6
 
         image_paths = self.__get_image_paths_for_video(hours, frames_per_hour)
