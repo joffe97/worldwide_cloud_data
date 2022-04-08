@@ -10,6 +10,9 @@ from typing import Callable
 import multiprocessing as mp
 from multiprocessing import shared_memory
 
+from wwclouds.config import CPU_COUNT
+from wwclouds.helpers.list_helper import ListHelper
+
 
 class Axis(Enum):
     LON = auto()
@@ -49,7 +52,7 @@ class EqcBlend:
         if len(data_arrays) == 0:
             raise ValueError("cannot call EqcMean object with 0 DataArrays")
         self.__init_data_arrays(data_arrays)
-        self.blend_mp()
+        self.blend()
         return self.as_data_array()
 
     def __del__(self):
@@ -252,26 +255,46 @@ class EqcBlend:
                 break
         return indexes
 
-    # def __add_data_array(self, data_array: xr.DataArray, from_longitude: float, to_longitude: float,
-                         # from_latitude: float, to_latitude: float) -> None:
-    def __add_data_array(self, values: np.ndarray, area: AreaDefinition, from_longitude: float, to_longitude: float,
-                         from_latitude: float, to_latitude: float) -> None:
-        print("START")
-        lons, lats = area.get_lonlats()
-        longitude_list = lons[0]
-        latitude_list = list(reversed(list(map(lambda val: val[0], lats))))
-        lon_indexes = self.__get_indexes_from_axis(longitude_list, from_longitude, to_longitude, self.__is_between_longitudes)
-        lat_indexes = self.__get_indexes_from_axis(latitude_list, from_latitude, to_latitude, self.__is_between_latitudes)
-
+    def __add_value_from_data_array_value_index(self, values: np.ndarray,
+                                                lon_list: list[float], lat_list: list[float],
+                                                lon_indexes: list[int], lat_indexes: list[int]):
         for lat_index in lat_indexes:
             for lon_index in lon_indexes:
                 value = values[lat_index][lon_index]
                 if np.isnan(value):
                     continue
                 new_lon_index, new_lat_index = self.__translate_coords_to_earth_array_indexes(
-                    (longitude_list[lon_index], latitude_list[lat_index])
+                    (lon_list[lon_index], lat_list[lat_index])
                 )
                 self.__earth_array[new_lat_index][new_lon_index] = value
+
+    # def __add_data_array(self, data_array: xr.DataArray, from_longitude: float, to_longitude: float,
+                         # from_latitude: float, to_latitude: float) -> None:
+
+    def __add_data_array(self, data_array: xr.DataArray, from_longitude: float, to_longitude: float,
+                         from_latitude: float, to_latitude: float) -> None:
+        print("START")
+        values = self.__get_values_from_data_array(data_array)
+        area: AreaDefinition = data_array.attrs["area"]
+        lons, lats = area.get_lonlats()
+        longitude_list = lons[0]
+        latitude_list = list(reversed(list(map(lambda val: val[0], lats))))
+        lon_indexes = self.__get_indexes_from_axis(longitude_list, from_longitude, to_longitude, self.__is_between_longitudes)
+        lat_indexes = self.__get_indexes_from_axis(latitude_list, from_latitude, to_latitude, self.__is_between_latitudes)
+
+        lat_indexes_split_gen = ListHelper.split_list(lat_indexes, CPU_COUNT)
+
+        processes = [
+            mp.Process(
+                target=self.__add_value_from_data_array_value_index,
+                args=(values, longitude_list, latitude_list, lon_indexes, lat_indexes_split)
+            ) for lat_indexes_split in lat_indexes_split_gen
+        ]
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join()
+
         print("END")
 
     def __get_data_array_edge_longitudes(self) -> list[float]:
@@ -316,28 +339,19 @@ class EqcBlend:
             lon_edge1 = lon_edges[index]
             lon_edge2 = lon_edges[(index + 1) % len(lon_edges)]
             data_array = self.__get_data_array_between_longitudes(lon_edge1, lon_edge2)
-            values = self.__get_values_from_data_array(data_array)
-            area: AreaDefinition = data_array.attrs["area"]
-            self.__add_data_array(values, area, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+            self.__add_data_array(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
 
     def blend_mp(self) -> None:
         lon_edges = self.__get_data_array_edge_longitudes()
-        processes = []
         for index in range(len(lon_edges)):
             print("BAM!")
             lon_edge1 = lon_edges[index]
             lon_edge2 = lon_edges[(index + 1) % len(lon_edges)]
             data_array = self.__get_data_array_between_longitudes(lon_edge1, lon_edge2)
-            values = self.__get_values_from_data_array(data_array)
-            area: AreaDefinition = data_array.attrs["area"]
-            # self.__add_data_array(values, area, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+            # self.__add_data_array(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
             process = mp.Process(
                 target=self.__add_data_array,
-                args=(values, area, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
+                args=(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
             )
-            processes.append(process)
+            # processes.append(process)
             # self.__add_data_array(data_array, lon_edge1, lon_edge2, self.latitude_range[0], self.latitude_range[1])
-        for process in processes:
-            process.start()
-        for process in processes:
-            process.join()
