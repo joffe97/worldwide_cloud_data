@@ -4,6 +4,7 @@ import argparse
 import warnings
 from datetime import datetime, timedelta
 
+import satpy
 import xarray
 from satpy.writers import to_image
 from satpy.composites import CloudCompositor
@@ -24,6 +25,9 @@ from product_enum import ProductEnum
 from config import DATA_PATH_PRODUCT
 from world_map.world_map import WorldMap
 from video_maker.video_maker import VideoMaker
+
+
+satpy.config.set()
 
 
 class System:
@@ -156,9 +160,9 @@ class System:
         return image_paths
 
     def __create_video(self):
-        hours = 24
-        frames_per_hour = 2
-        fps = 6
+        hours = 6
+        frames_per_hour = 4
+        fps = 8
 
         image_paths = self.__get_image_paths_for_video(hours, frames_per_hour)
         VideoMaker(self.__video_path, image_paths, fps).create_video()
@@ -172,6 +176,8 @@ class System:
 
 
 if __name__ == '__main__':
-    system = System.from_args(utctime=datetime(2022, 2, 14, 9, 25).timestamp())
-    # system = System.from_args(utctime=datetime(2022, 4, 5, 12, 25).timestamp())
-    system.create_products()
+    System.from_args(
+        # utctime=datetime(2022, 2, 14, 9, 25).timestamp()
+        # utctime=datetime.utcnow().timestamp()
+        utctime=datetime(2020, 12, 14, 19, 00).timestamp()
+    ).create_products()
