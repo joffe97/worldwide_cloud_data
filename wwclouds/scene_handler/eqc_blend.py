@@ -54,14 +54,12 @@ class LongitudeSection:
 
     def merge_with_section(self, section: "LongitudeSection") -> list["LongitudeSection"]:
         if any(sec.is_merged for sec in (self, section)):
-            # print(f"{list(map(str, [self, section]))}")
             return [self, section]
         elif self.to_longitude == section.from_longitude:
             section1, section2 = self, section
         elif section.to_longitude == self.from_longitude:
             section1, section2 = section, self
         else:
-            # print(f"{list(map(str, [self, section]))}")
             return [self, section]
 
         intersection_lon = section1.to_longitude
@@ -81,7 +79,7 @@ class LongitudeSection:
         elif shortest_middle_intersection_diff_index == 1:
             new_intersections = LongitudeHelper.add(intersection_lon, -middle_intersection_diffs[1]), middle_lons[1]
         else:
-            raise ValueError("diff index must be eighter 0 or 1")
+            raise ValueError("diff index must be either 0 or 1")
 
         new_section1 = LongitudeSection(section1.data_array, section1.from_longitude, new_intersections[0])
         new_section_merge = LongitudeSection(section1.data_array, new_intersections[0], new_intersections[1], data_array2=section2.data_array)
@@ -89,14 +87,7 @@ class LongitudeSection:
 
         new_sections = [new_section1, new_section_merge, new_section2]
         new_sections_filtered = list(filter(lambda sec: sec.from_longitude != sec.to_longitude, new_sections))
-        # print(f"{list(map(str, [self, section]))} -> {list(map(str, new_sections_filtered))}")
         return new_sections_filtered
-
-    def __repr__(self):
-        string = str((self.from_longitude, self.to_longitude))
-        if self.is_merged:
-            return f"\033[94m{string}\033[0m"
-        return string
 
 
 class MapPortion:
@@ -324,8 +315,6 @@ class EqcBlend:
             middle_axis_val = axis_helper.get_middle(from_axis_val, to_axis_val)
             start_index = 0
             end_index = len(indexes) - 1
-            # print(f"{max_length=} - {len(indexes)=}")
-            # print(f"{len(axis_values)=}")
             for _ in range(len(indexes) - max_length):
                 start_val, end_val = (axis_values[indexes[i]] for i in (start_index, end_index))
                 start_diff, end_diff = (axis_helper.get_diff(val, middle_axis_val) for val in (start_val, end_val))
@@ -333,16 +322,10 @@ class EqcBlend:
                     start_index += 1
                 else:
                     end_index -= 1
-            for i in list(range(0, start_index + 1)) + list(range(end_index, len(indexes))):
-                continue
-                print(axis_values[indexes[i]])
             indexes = indexes[start_index:(end_index + 1)]
-            # print(f"{start_index}, {end_index}")
+
         if from_axis_val == -70:
-            axis_vals = [self.__translate_coords_to_earth_array_indexes((0, axis_values[index])) for index in indexes]
-            print(axis_vals)
-            print(len(axis_vals))
-        print()
+            print(f"{len(indexes)=}")
 
         return indexes
 
@@ -352,7 +335,7 @@ class EqcBlend:
         from_longitude = lon_section.from_longitude
         to_longitude = lon_section.to_longitude
         from_latitude, to_latitude = self.latitude_range
-        lat_edge_size = 2
+        lat_edge_size = 5
         lat_indexes_count = self.__earth_array_latitude_length + lat_edge_size * 2 - 2
         map_portion_lists = [[], []]
         for index, data_array in enumerate(lon_section.data_arrays[:2]):
@@ -387,16 +370,11 @@ class EqcBlend:
                 self.__earth_array[new_lat_index][new_lon_index] = value
 
     def __add_value_from_two_map_portions(self, map_portion1: MapPortion, map_portion2: MapPortion) -> None:
-        iis = []
-        new_lat_indexes = []
         lon_indexes_length = len(map_portion1.lon_indexes)
-        # print(f"lat_lens: {len(map_portion1.lat_indexes)} {len(map_portion2.lat_indexes)}")
-        # print(f"lon_lens: {len(map_portion1.lon_indexes)} {len(map_portion2.lon_indexes)}")
         earth_array_lat_range = self.__earth_array_latitude_index_range
-        old_lon_index, old_lat_index = None, None
-        if (len(map_portion1.lon_indexes) != len(map_portion2.lon_indexes)
-                or len(map_portion1.lat_indexes) != len(map_portion2.lat_indexes)):
-            raise ValueError("map_portion objects must have axis indexies of same dimentions")
+        if len(map_portion1.lat_indexes) != len(map_portion2.lat_indexes):
+            print(f"{len(map_portion1.lon_indexes)=} == {len(map_portion2.lon_indexes)=} && {len(map_portion1.lat_indexes)=} == {len(map_portion2.lat_indexes)=}")
+            raise ValueError("map_portion objects must have axis indexes of same dimensions")
         for lat_index1, lat_index2 in zip(map_portion1.lat_indexes, map_portion2.lat_indexes):
             for i, (lon_index1, lon_index2) in enumerate(zip(map_portion1.lon_indexes, map_portion2.lon_indexes)):
                 new_lon_index, new_lat_index = self.__translate_coords_to_earth_array_indexes(
@@ -414,16 +392,7 @@ class EqcBlend:
                     progress = ((i / lon_indexes_length) - 0.5) * self.merge_intensity  # Progress from -x to x, where 2x is merge_intensity
                     weight = MathHelper.sigmoid(progress)
                     value = values_filtered[0] * (1 - weight) + values_filtered[1] * weight
-                if i == 0:
-                    new_lat_indexes.append(new_lat_index)
-                if old_lat_index is not None and abs(new_lat_index - old_lat_index) >= 2:
-                    iis.append(new_lat_index)
-                old_lon_index, old_lat_index = new_lon_index, new_lat_index
                 self.__earth_array[new_lat_index][new_lon_index] = value
-        print(map_portion1.lat_indexes)
-        print(new_lat_indexes)
-        # print()
-        # print(iis)
 
     def __add_value_from_map_portions(self, map_portion1: MapPortion, map_portion2: Optional[MapPortion]) -> None:
         if map_portion2 is None:
@@ -432,21 +401,16 @@ class EqcBlend:
             self.__add_value_from_two_map_portions(map_portion1, map_portion2)
 
     def __add_lon_section(self, lon_section: LongitudeSection) -> None:
-        print("START")
         map_portions_list = self.__longitude_section_to_map_portions(lon_section)
-
         processes = [
             mp.Process(
-                target=self.__add_value_from_map_portions,  # TODO: Fix concurrency issues. Investigate list split function
+                target=self.__add_value_from_map_portions,
                 args=(map_portion1, map_portion2)
             ) for map_portion1, map_portion2 in map_portions_list
         ]
-        for process in processes:
-            process.start()
-        for process in processes:
-            process.join()
-
-        print("END")
+        for methodname in ["start", "join", "close"]:
+            for process in processes:
+                getattr(process, methodname)()
 
     def __get_data_array_edge_longitudes(self) -> list[float]:
         lons_sorted = sorted(data_array.attrs["area"].proj_dict["lon_0"] for data_array in self.data_arrays)

@@ -17,7 +17,7 @@ class Downloader(metaclass=abc.ABCMeta):
                  update_frequency: timedelta,
                  all_bands: Optional[List[str]] = None
                  ):
-        self.path = f"{config.DATA_PATH}/{subdir}"
+        self.path = f"{config.DATA_PATH_DOWNLOADS}/{subdir}"
         self.reader = reader
         self.update_frequency = update_frequency
         self.all_bands = all_bands

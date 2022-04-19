@@ -1,3 +1,6 @@
+import os
+import pathlib
+
 from satpy import Scene
 import satpy.writers
 from xarray import DataArray
@@ -6,6 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Callable, Union
 import functools
+
+from wwclouds.config import DATA_PATH_SATPY_RESAMPLE_CACHE
 
 
 def _return_as_scene_ext_decorator(func) -> Callable[..., "SceneExt"]:
@@ -27,12 +32,6 @@ class SceneExt(Scene):
         scene_ext = SceneExt()
         for key, value in vars(scene).items():
             setattr(scene_ext, key, value)
-        return scene_ext
-
-    @staticmethod
-    def from_datasets(datasets: list[DataArray]) -> "SceneExt":
-        print()
-        scene_ext = SceneExt()
         return scene_ext
 
     @property
@@ -106,4 +105,4 @@ class SceneExt(Scene):
             projection,
             **area_def_args
         )
-        return self.resample(area_def, **kwargs)
+        return self.resample(area_def, cache_dir=DATA_PATH_SATPY_RESAMPLE_CACHE, **kwargs)

@@ -31,10 +31,14 @@ satpy.config.set()
 
 
 class System:
-    def __init__(self, product_enum: ProductEnum, utctime: datetime, resolution: int, **kwargs):
+    def __init__(self, product_enum: ProductEnum, utctime: datetime, resolution: int,
+                 hours: int = None, images_per_hour: int = None, fps: int = None, **kwargs):
         self.product_enum = product_enum
         self.utctime = utctime
         self.resolution = resolution
+        self.hours = hours
+        self.images_per_hour = images_per_hour
+        self.fps = fps
 
         self._frequencies = [12.3]   # TODO: Find necessary frequencies.
         self._satellite_collection = SatelliteCollection([
@@ -49,21 +53,35 @@ class System:
     def from_args(**override_kwargs) -> "System":
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            "--output",
-            help="The desired output",
+            "output",
+            help="the desired output",
             choices=[product_enum.name.lower() for product_enum in ProductEnum],
-            required=True,
             nargs="+"
         )
         parser.add_argument(
-            "--utctime",
-            help="Timestamp (defaults to current time)",
-            default=datetime.utcnow().timestamp()
+            "resolution",
+            help="resolution of the product",
+            type=int
         )
         parser.add_argument(
-            "--resolution",
-            help="Resolution of the product",
-            required=True,
+            "--utctime",
+            help="timestamp (defaults to current time)",
+            default=datetime.utcnow().timestamp(),
+            type=int
+        )
+        parser.add_argument(
+            "--hours",
+            help="hours of video, going backwards (only applicable to video output)",
+            type=int
+        )
+        parser.add_argument(
+            "--iph",
+            help="images per hour (only applicable to video output)",
+            type=int
+        )
+        parser.add_argument(
+            "--fps",
+            help="frames per second (only applicable to video output)",
             type=int
         )
         args = parser.parse_args()
@@ -72,8 +90,17 @@ class System:
         product_enum = ProductEnum.from_str_list(args_dict["output"])
         utctime = datetime.fromtimestamp(args_dict["utctime"])
         resolution = int(args_dict["resolution"])
+        hours = int(args_dict.get("hours", 0))
+        images_per_hour = int(args_dict.get("iph", 0))
+        fps = int(args_dict.get("fps", 0))
 
-        return System(product_enum, utctime, resolution)
+        if product_enum & ProductEnum.VIDEO:
+            illegal_args = [arg for arg in ("hours", "iph", "fps") if args_dict[arg] is None or args_dict[arg] <= 0]
+            if illegal_args:
+                parser.error(f"video output cannot be created without the following arguments, "
+                             f"where integers must be larger than 0: {illegal_args}")
+
+        return System(product_enum, utctime, resolution, hours, images_per_hour, fps)
 
     @property
     def __time_subfolder(self) -> str:
@@ -160,12 +187,8 @@ class System:
         return image_paths
 
     def __create_video(self):
-        hours = 6
-        frames_per_hour = 4
-        fps = 8
-
-        image_paths = self.__get_image_paths_for_video(hours, frames_per_hour)
-        VideoMaker(self.__video_path, image_paths, fps).create_video()
+        image_paths = self.__get_image_paths_for_video(self.hours, self.images_per_hour)
+        VideoMaker(self.__video_path, image_paths, self.fps).create_video()
 
     def create_products(self):
         self.__create_imagedata_for_products()

@@ -144,12 +144,15 @@ class MultiSceneExt(MultiScene):
         if len(self.scenes) == 0:
             raise ValueError("cannot combine MultiSceneExt with 0 scenes")
         groups = self.group_loaded()
+        start_time_resample = time.time()
         eqc_mscn = self.resample_all_to_eqc(resolution=resolution, reduce_data=False)
+        print(time.time() - start_time_resample)
         eqc_mscn.shared_dataset_ids = groups
         start_time = time.time()
         eqc_blend = EqcBlend((-70, 70))
         combined_scn = eqc_mscn.blend(eqc_blend)
         print(time.time() - start_time)
+        print()
         combined_scn_ext = SceneExt.from_scene(combined_scn)
         combined_scn_ext.load(self.loaded)
         return combined_scn_ext
