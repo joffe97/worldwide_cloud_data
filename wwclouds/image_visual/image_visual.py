@@ -1,12 +1,10 @@
-import pandas as mapnik
-# import mapnik
 from typing import Union
 import cv2
 import numpy as np
 import pathlib
 
 
-class WorldMap:
+class ImageVisual:
     def __init__(self, resolution: tuple[int, int], *, load: bool = False):
         if not isinstance(resolution, tuple) or len(resolution) != 2 or not all(isinstance(dim, int) for dim in resolution):
             raise ValueError("resolution is invalid")
@@ -18,14 +16,14 @@ class WorldMap:
             self.load()
 
     @staticmethod
-    def from_image(image, **kwargs) -> "WorldMap":
+    def from_image(image, **kwargs) -> "ImageVisual":
         resolution = tuple(int(image.shape[i]) for i in [1, 0])
-        return WorldMap(resolution, **kwargs)
+        return ImageVisual(resolution, **kwargs)
 
     @staticmethod
-    def from_image_path(image_path: str, **kwargs) -> ("WorldMap", np.ndarray):
+    def from_image_path(image_path: str, **kwargs) -> ("ImageVisual", np.ndarray):
         image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-        world_map = WorldMap.from_image(image, **kwargs)
+        world_map = ImageVisual.from_image(image, **kwargs)
         return world_map, image
 
     @property
@@ -49,29 +47,6 @@ class WorldMap:
         if self.__image is None:
             raise ValueError("image cannot be used before it's loaded")
         return self.__image
-
-    def create_image(self) -> None:
-        m = mapnik.Map(self.resolution[0], self.resolution[1], "+datum=WGS84 +lat_0=0 +lat_ts=0 +lon_0=0 +no_defs +proj=eqc +type=crs +units=m +x_0=0 +y_0=0")
-        m.background = mapnik.Color("steelblue")
-        r = mapnik.Rule()
-        polygons = mapnik.PolygonSymbolizer()
-        polygons.fill = mapnik.Color('#11aa11')
-        lines = mapnik.LineSymbolizer()
-        lines.fill = mapnik.Color('#444444')
-        for symbol in polygons, lines:
-            r.symbols.append(symbol)
-        s = mapnik.Style()
-        s.rules.append(r)
-        m.append_style('My Style', s)
-        layer = mapnik.Layer("+datum=WGS84 +lat_0=0 +lat_ts=0 +lon_0=0 +no_defs +proj=eqc +type=crs +units=m +x_0=0 +y_0=0")
-        layer.datasource = mapnik.Shapefile(file=self.shapefile_path)
-        layer.styles.append('My Style')
-        m.layers.append(layer)
-        m.zoom_all()
-        envelope = m.envelope()
-        new_x, new_y = (envelope[2] - envelope[0]) // 2, (envelope[3] - envelope[1]) // 2
-        m.zoom_to_box(mapnik.Box2d(-new_x, -new_y, new_x, new_y))
-        mapnik.render_to_file(m, self.filepath, 'png')
 
     def load(self):
         image = cv2.imread(self.filepath, cv2.IMREAD_UNCHANGED)
@@ -114,5 +89,5 @@ class WorldMap:
 
 
 if __name__ == '__main__':
-    wwmap = WorldMap((10000, 5000), load=True)
+    wwmap = ImageVisual((10000, 5000), load=True)
     wwmap.create_image()

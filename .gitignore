@@ -137,5 +137,5 @@ wwclouds/data
 wwclouds/wavelength*
 wwclouds/test*
 wwclouds/clouds*
-wwclouds/world_map/world_borders*
+wwclouds/image_visual/world_borders*
 results*.prof

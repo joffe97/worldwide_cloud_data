@@ -57,7 +57,16 @@ class Meteosat(Downloader):
             data={'grant_type': 'client_credentials'},
             headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
-        return response.json()['access_token']
+        response_json = response.json()
+        access_token = response_json.get('access_token')
+        if not access_token:
+            recived_errors = []
+            for key in "error", "error_description":
+                if key in response_json:
+                    recived_errors.append(response_json[key])
+            recived_error_msg = ": ".join(recived_errors)
+            raise PermissionError(f"access token not recived. {recived_error_msg}")
+        return access_token
 
     def __get_product_url_for_time(self, time: datetime) -> str:
         url_ending = f"collections/{self.url_friendly_collection_id}/dates/{time.year}/{time.month:02.0f}" \

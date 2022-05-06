@@ -105,4 +105,4 @@ class SceneExt(Scene):
             projection,
             **area_def_args
         )
-        return self.resample(area_def, cache_dir=DATA_PATH_SATPY_RESAMPLE_CACHE, **kwargs)
+        return self.resample(area_def, resampler="bilinear", cache_dir=DATA_PATH_SATPY_RESAMPLE_CACHE, **kwargs)

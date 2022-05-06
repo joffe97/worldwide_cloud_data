@@ -23,7 +23,7 @@ from scene_handler.multiscene_ext import MultiSceneExt
 from scene_handler.scene_ext import SceneExt
 from product_enum import ProductEnum
 from config import DATA_PATH_PRODUCT
-from world_map.world_map import WorldMap
+from image_visual.image_visual import ImageVisual
 from video_maker.video_maker import VideoMaker
 
 
@@ -40,7 +40,9 @@ class System:
         self.images_per_hour = images_per_hour
         self.fps = fps
 
-        self._frequencies = [12.3]   # TODO: Find necessary frequencies.
+        self._frequencies = [10.6]   # TODO: Find necessary frequencies.
+        self._legal_resolutions = [500, 1000, 2000, 3000.403165817]
+        self._max_latitude = 70
         self._satellite_collection = SatelliteCollection([
             SatelliteEnum.METEOSAT8,
             SatelliteEnum.METEOSAT11,
@@ -90,9 +92,9 @@ class System:
         product_enum = ProductEnum.from_str_list(args_dict["output"])
         utctime = datetime.fromtimestamp(args_dict["utctime"])
         resolution = int(args_dict["resolution"])
-        hours = int(args_dict.get("hours", 0))
-        images_per_hour = int(args_dict.get("iph", 0))
-        fps = int(args_dict.get("fps", 0))
+        hours = int(args_dict["hours"]) if args_dict["hours"] is not None else None
+        images_per_hour = int(args_dict["iph"]) if args_dict["iph"] is not None else None
+        fps = int(args_dict["fps"]) if args_dict["fps"] is not None else None
 
         if product_enum & ProductEnum.VIDEO:
             illegal_args = [arg for arg in ("hours", "iph", "fps") if args_dict[arg] is None or args_dict[arg] <= 0]
@@ -116,7 +118,7 @@ class System:
 
     @property
     def __video_path(self) -> str:
-        return f"{self.__product_directory_path}/video.mp4"
+        return f"{self.__product_directory_path}/video_h{self.hours}_iph{self.images_per_hour}_fps{self.fps}.mp4"
 
     def __copy(self, **override_args) -> "System":
         args = {**vars(self), **override_args}
@@ -125,17 +127,18 @@ class System:
     def __get_imagedata_path_for_format(self, file_ending: str) -> str:
         return f"{self.__product_directory_path}/imagedata.{file_ending}"
 
-    def __get_comb_scene(self) -> SceneExt:
+    def __get_combined_scene(self) -> SceneExt:
         file_readers = self._satellite_collection.download_all(frequencies=self._frequencies, utctime=self.utctime)
         scenes = [reader.read_to_scene() for reader in file_readers]
         multi_scn_ext = MultiSceneExt(scenes)
-        multi_scn_ext.load(self._frequencies, resolution=[500, 1000, 2000, 3000.403165817])  # TODO: Find legal resolutions
-        comb_scene = multi_scn_ext.combine(resolution=self.resolution)
+        multi_scn_ext.load(self._frequencies, resolution=self._legal_resolutions)
+        multi_scn_ext_eqc = multi_scn_ext.resample_loaded_to_eqc(self.resolution)
+        comb_scene = multi_scn_ext_eqc.combine(self._max_latitude)
         return comb_scene
 
     def __create_new_image(self) -> XRImage:
         compositor = CloudCompositor("clouds", 230, transition_gamma=1.5)
-        comb_scene = self.__get_comb_scene()
+        comb_scene = self.__get_combined_scene()
         composite = compositor([comb_scene[frequency] for frequency in self._frequencies])
         return to_image(composite)
 
@@ -170,7 +173,7 @@ class System:
     def __create_imagevisual(self) -> str:
         if not os.path.exists(self.imagevisual_path):
             image_path = self.__get_imagedata_path_for_format("png")
-            world_map, image = WorldMap.from_image_path(image_path, load=True)
+            world_map, image = ImageVisual.from_image_path(image_path, load=True)
             world_map.add_4dim_image(image)
             world_map.save_as_png(self.imagevisual_path)
         return self.imagevisual_path
@@ -184,6 +187,7 @@ class System:
                 system = self.__copy(product_enum=ProductEnum.IMAGEVISUAL, utctime=time_stamp)
                 system.create_products()
                 image_paths.append(system.imagevisual_path)
+        image_paths.reverse()
         return image_paths
 
     def __create_video(self):
