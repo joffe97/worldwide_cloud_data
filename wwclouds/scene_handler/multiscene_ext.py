@@ -143,11 +143,11 @@ class MultiSceneExt(MultiScene):
         ])
 
     def resample_loaded_to_eqc(self, resolution=None, **kwargs):
-        start_time_resample = time.time()
+        start_time = time.time()
         groups = self.group_loaded()
         eqc_mscn = self.resample_all_to_eqc(resolution, **kwargs)
         eqc_mscn.shared_dataset_ids = groups
-        print(time.time() - start_time_resample)
+        print(f"Resampled scenes: {round(time.time() - start_time, 4)} sec")
         return eqc_mscn
 
     def combine(self, max_latitude) -> SceneExt:
@@ -156,8 +156,7 @@ class MultiSceneExt(MultiScene):
         start_time = time.time()
         eqc_blend = EqcBlend((-max_latitude, max_latitude))
         combined_scn = self.blend(eqc_blend)
-        print(time.time() - start_time)
-        print()
+        print(f"Combined scenes: {round(time.time() - start_time, 4)} sec")
         combined_scn_ext = SceneExt.from_scene(combined_scn)
         combined_scn_ext.load(self.loaded)
         return combined_scn_ext

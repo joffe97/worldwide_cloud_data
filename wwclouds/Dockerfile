@@ -36,4 +36,4 @@ RUN python3.9 -m pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENTRYPOINT ["python3.9", ".", "--output", "imagevisual", "--resolution", "80000"]
+ENTRYPOINT python3.9 . imagevisual 20000 && tail -f /dev/null

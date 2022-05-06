@@ -1,10 +1,10 @@
 import os
 import sys
 import argparse
+import time
 import warnings
 from datetime import datetime, timedelta
 
-import satpy
 import xarray
 from satpy.writers import to_image
 from satpy.composites import CloudCompositor
@@ -25,9 +25,6 @@ from product_enum import ProductEnum
 from config import DATA_PATH_PRODUCT
 from image_visual.image_visual import ImageVisual
 from video_maker.video_maker import VideoMaker
-
-
-satpy.config.set()
 
 
 class System:
@@ -137,8 +134,8 @@ class System:
         return comb_scene
 
     def __create_new_image(self) -> XRImage:
-        compositor = CloudCompositor("clouds", 230, transition_gamma=1.5)
         comb_scene = self.__get_combined_scene()
+        compositor = CloudCompositor("clouds", 230, transition_gamma=1.5)
         composite = compositor([comb_scene[frequency] for frequency in self._frequencies])
         return to_image(composite)
 
@@ -195,11 +192,17 @@ class System:
         VideoMaker(self.__video_path, image_paths, self.fps).create_video()
 
     def create_products(self):
+        start_time = time.time()
+        print("Stating product creation")
+        print("Creating imagedata")
         self.__create_imagedata_for_products()
         if self.product_enum & (ProductEnum.IMAGEVISUAL | ProductEnum.VIDEO):
+            print("Creating imagevisual")
             self.__create_imagevisual()
         if self.product_enum & ProductEnum.VIDEO:
+            print("Creating video")
             self.__create_video()
+        print(f"Finished in {time.time() - start_time} seconds")
 
 
 if __name__ == '__main__':

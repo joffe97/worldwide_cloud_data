@@ -324,9 +324,6 @@ class EqcBlend:
                     end_index -= 1
             indexes = indexes[start_index:(end_index + 1)]
 
-        if from_axis_val == -70:
-            print(f"{len(indexes)=}")
-
         return indexes
 
     def __longitude_section_to_map_portions(
@@ -373,7 +370,6 @@ class EqcBlend:
         lon_indexes_length = len(map_portion1.lon_indexes)
         earth_array_lat_range = self.__earth_array_latitude_index_range
         if len(map_portion1.lat_indexes) != len(map_portion2.lat_indexes):
-            print(f"{len(map_portion1.lon_indexes)=} == {len(map_portion2.lon_indexes)=} && {len(map_portion1.lat_indexes)=} == {len(map_portion2.lat_indexes)=}")
             raise ValueError("map_portion objects must have axis indexes of same dimensions")
         for lat_index1, lat_index2 in zip(map_portion1.lat_indexes, map_portion2.lat_indexes):
             for i, (lon_index1, lon_index2) in enumerate(zip(map_portion1.lon_indexes, map_portion2.lon_indexes)):

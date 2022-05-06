@@ -1,4 +1,3 @@
-import functools
 from datetime import datetime, timedelta
 import os
 import abc
@@ -17,7 +16,7 @@ class Downloader(metaclass=abc.ABCMeta):
                  update_frequency: timedelta,
                  all_bands: Optional[List[str]] = None
                  ):
-        self.path = f"{config.DATA_PATH_DOWNLOADS}/{subdir}"
+        self.subdir = subdir
         self.reader = reader
         self.update_frequency = update_frequency
         self.all_bands = all_bands
@@ -29,6 +28,10 @@ class Downloader(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def _get_previous_scan_start_time_for_band(self, band: str, time: datetime) -> datetime:
         pass
+
+    @property
+    def path(self):
+        return f"{config.DATA_PATH_DOWNLOADS}/{self.subdir}"
 
     def get_first_scan_start_time_for_bands(self, bands: list[str], time: datetime) -> datetime:
         scan_start_times = [self._get_previous_scan_start_time_for_band(band, time) for band in bands]
@@ -63,5 +66,5 @@ class Downloader(metaclass=abc.ABCMeta):
         start = t.time()
         file_paths = self._download(bands, time)
         file_reader = FileReader(file_paths, reader=self.reader)
-        print(t.time() - start)
+        print(f"Downloaded {self.subdir}: {round(t.time() - start, 4)} sec")
         return file_reader
