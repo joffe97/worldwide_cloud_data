@@ -11,6 +11,3 @@ install:
 	mv ./wwclouds/requirements.txt ./wwclouds/requirements.txt.backup
 	$(PIP) freeze > ./wwclouds/requirements.txt
 
-test:
-	$(PYTHON) -m unittest
-
