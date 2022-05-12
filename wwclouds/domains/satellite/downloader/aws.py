@@ -7,19 +7,19 @@ from typing import Iterator
 import abc
 import functools
 
-from wwclouds.satellite.downloader.downloader import Downloader
+from wwclouds.domains.satellite.downloader.downloader import Downloader
+from wwclouds.config import CPU_COUNT
 
 
 class Aws(Downloader, metaclass=abc.ABCMeta):
-    s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED, max_pool_connections=10))
-    transfer_config = s3transfer.TransferConfig(max_concurrency=10, use_threads=True)
+    s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED, max_pool_connections=CPU_COUNT))
+    transfer_config = s3transfer.TransferConfig(max_concurrency=CPU_COUNT, use_threads=True)
 
-    def __init__(self, bucket: str, product: str, reader: str, update_frequency: timedelta, all_bands: [int]):
+    def __init__(self, bucket: str, product: str, reader: str, update_frequency: timedelta):
         super().__init__(
             subdir=f"{bucket}/{product}",
             reader=reader,
-            update_frequency=update_frequency,
-            all_bands=all_bands
+            update_frequency=update_frequency
         )
         self.bucket = bucket
         self.product = product
@@ -27,10 +27,6 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def _get_aws_prefix_for_band(self, band: str, time: datetime) -> str:
         pass
-
-    # @abc.abstractmethod
-    # def _get_previous_keys_for_band(self, band: str, time: datetime, retries: int = 3) -> [str]:
-        # pass
 
     @abc.abstractmethod
     def _get_scan_start_time_from_object_key(self, object_key: str) -> datetime:
@@ -89,8 +85,8 @@ class Aws(Downloader, metaclass=abc.ABCMeta):
         s3t = s3transfer.create_transfer_manager(self.s3_client, self.transfer_config)
         for keys in keys_list:
             for key in keys:
-                file_path = self.get_local_file_path(key)
-                if not self.file_is_downloaded(key):
+                file_path = self._get_local_file_path(key)
+                if not self._file_is_downloaded(key):
                     s3t.download(self.bucket, key, file_path)
                 file_paths.append(file_path)
         s3t.shutdown()

@@ -1,15 +1,13 @@
 import functools
-import os.path
 from datetime import datetime, timedelta
 import requests
 from urllib.parse import quote_plus
 from enum import Enum, auto
-from typing import Union, List, Optional
+from typing import List, Optional
 
-from wwclouds.satellite.downloader.downloader import Downloader
-from wwclouds.satellite.downloader.file_reader import FileReader
+from wwclouds.domains.satellite.downloader.downloader import Downloader
 from wwclouds import config
-from wwclouds.satellite.satellite_enum import SatelliteEnum
+from wwclouds.domains.satellite.satellite_enum import SatelliteEnum
 
 
 class MeteosatType(Enum):
@@ -43,16 +41,15 @@ class Meteosat(Downloader):
         self.collection_id = meteosat_type.collection_id
 
     @property
-    def url_friendly_collection_id(self) -> str:
+    def __url_friendly_collection_id(self) -> str:
         return quote_plus(self.collection_id)
 
     def _get_previous_scan_start_time_for_band(self, band: str, time: datetime):
-        return self.get_previous_update_time(time)
+        return self._get_previous_update_time(time)
 
-    def __get_access_key(self) -> str:
-        token_url = config.METEOSAT_API_ENDPOINT + "/token"
+    def __get_access_token(self) -> str:
         response = requests.post(
-            token_url,
+            url=config.METEOSAT_TOKEN_ENDPOINT,
             auth=requests.auth.HTTPBasicAuth(config.METEOSAT_CONSUMER_KEY, config.METEOSAT_CONSUMER_SECRET),
             data={'grant_type': 'client_credentials'},
             headers={"Content-Type": "application/x-www-form-urlencoded"}
@@ -69,7 +66,7 @@ class Meteosat(Downloader):
         return access_token
 
     def __get_product_url_for_time(self, time: datetime) -> str:
-        url_ending = f"collections/{self.url_friendly_collection_id}/dates/{time.year}/{time.month:02.0f}" \
+        url_ending = f"collections/{self.__url_friendly_collection_id}/dates/{time.year}/{time.month:02.0f}" \
                      f"/{time.day:02.0f}/times/{time.hour:02.0f}/{time.minute:02.0f}/products"
         return f"{config.METEOSAT_BROWSE_ENDPOINT}/{url_ending}"
 
@@ -89,7 +86,7 @@ class Meteosat(Downloader):
         return product["id"]
 
     def __get_download_url_for_product(self, product_id: str) -> str:
-        url_ending = f"collections/{self.url_friendly_collection_id}/products/{product_id}/entry?name={product_id}.nat"
+        url_ending = f"collections/{self.__url_friendly_collection_id}/products/{product_id}/entry?name={product_id}.nat"
         return f"{config.METEOSAT_DOWNLOAD_ENDPOINT}/{url_ending}"
 
     @functools.lru_cache(32)
@@ -98,13 +95,13 @@ class Meteosat(Downloader):
         return self.__get_download_url_for_product(product_id)
 
     def _download(self, bands: Optional[List[str]], time: datetime) -> [str]:
-        previous_updated_time = self.get_previous_update_time(time)
+        previous_updated_time = self._get_previous_update_time(time)
         download_url = self.__get_download_url_for_time(previous_updated_time)
-        filepath = self.get_local_file_path(download_url)
-        if not self.file_is_downloaded(download_url):
-            access_token = self.__get_access_key()
+        filepath = self._get_local_file_path(download_url)
+        if not self._file_is_downloaded(download_url):
+            access_token = self.__get_access_token()
             stream_response = requests.get(
-                download_url,
+                url=download_url,
                 params={"format": "json"},
                 stream=True,
                 headers={"Authorization": f"Bearer {access_token}"})
@@ -114,17 +111,3 @@ class Meteosat(Downloader):
                         f.write(chunk)
                         f.flush()
         return [filepath]
-
-
-if __name__ == '__main__':
-    meteosat = Meteosat(SatelliteEnum.METEOSAT8)
-    file_reader = meteosat.download(time=datetime(2022, 1, 12, 15, 29))
-    scn = file_reader.read_to_scene()
-    print(scn.available_dataset_ids())
-    my_scene = 1.5
-    scn.load([my_scene])
-
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.imshow(scn[my_scene])
-    plt.show()

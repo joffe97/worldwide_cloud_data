@@ -1,12 +1,7 @@
-import functools
-import time
-
-import dask.array
 import xarray as xr
 import numpy as np
 from pyresample import AreaDefinition
 from datetime import datetime
-from enum import Enum, auto
 import multiprocessing as mp
 from multiprocessing import shared_memory
 from typing import Optional, Type
@@ -149,13 +144,6 @@ class EqcBlend:
         return self.data_arrays[0]
 
     @property
-    def __data_arrays_sorted_by_longitude(self) -> list[xr.DataArray]:
-        return sorted(
-            self.data_arrays,
-            key=lambda data_array: data_array.attrs["area"].proj_dict["lon_0"]
-        )
-
-    @property
     def __data_type(self) -> type:
         return self.__get_values_from_data_array(self.__first_data_array)[0][0].dtype
 
@@ -222,32 +210,19 @@ class EqcBlend:
     def __init_data_arrays(self, data_arrays: list[xr.DataArray]):
         self.data_arrays = data_arrays
         self.lon_delta_step, self.lat_delta_step = self.__get_lonlats_delta_steps(20)
-
-        self.shared_earth_array, self.__earth_array = self.__create_shared_earth_array()
+        self.__init_shared_earth_array()
 
     def __get_values_from_data_array(self, data_array: xr.DataArray) -> np.ndarray:
         if self.__data_array_values_map is None:
             self.__data_array_values_map = dict((id(data_array), data_array.values) for data_array in self.data_arrays)
         return self.__data_array_values_map[id(data_array)]
 
-    def __create_shared_earth_array(self) -> (shared_memory.SharedMemory, np.ndarray):
+    def __init_shared_earth_array(self) -> (shared_memory.SharedMemory, np.ndarray):
         size = np.dtype(self.__data_type).itemsize * np.prod(self.lat_len * self.lon_len)
         shm = shared_memory.SharedMemory(create=True, size=size)
         dst = np.ndarray(self.__shape, self.__data_type, buffer=shm.buf)
         dst[:] = np.nan
-        return shm, dst
-
-    def __get_axis_sorted_in_degrees(self, axis: Axis) -> np.ndarray:
-        max_value = axis.degree_count
-        delta_step = getattr(self, f"{axis.name.lower()}_delta_step")
-        axis_len_aim = getattr(self, f"{axis.name.lower()}_len")
-
-        axis = np.arange(0, max_value, delta_step)
-        overflow = len(axis) - axis_len_aim
-        if overflow < 0:
-            ValueError("axis cannot be less than the aim")
-        axis.resize(axis_len_aim)
-        return axis
+        self.shared_earth_array, self.__earth_array = shm, dst
 
     def __get_axis_sorted(self, axis: Axis) -> np.ndarray:
         axis_len_aim = getattr(self, f"{axis.name.lower()}_len")
@@ -351,8 +326,7 @@ class EqcBlend:
                                                        edge_size=lat_edge_size)
             map_portion = MapPortion(values, longitude_list, latitude_list, lon_indexes, lat_indexes)
             map_portion_lists[index] = map_portion.split_by_lat_axis(CPU_COUNT)
-        map_portions = [tuple(map_tuples) for map_tuples in zip(*map_portion_lists)]
-        return map_portions
+        return [tuple(map_tuples) for map_tuples in zip(*map_portion_lists)]
 
     def __add_value_from_single_map_portion(self, map_portion: MapPortion) -> None:
         earth_array_lat_range = self.__earth_array_latitude_index_range
@@ -379,7 +353,7 @@ class EqcBlend:
                 if not (earth_array_lat_range[0] <= new_lat_index <= earth_array_lat_range[1]):
                     continue
                 values = [map_portion1.values[lat_index1][lon_index1], map_portion2.values[lat_index2][lon_index2]]
-                values_filtered = list(filter(lambda val: val and not np.isnan(val), values))
+                values_filtered = list(filter(lambda val: not np.isnan(val), values))
                 if len(values_filtered) == 0:
                     continue
                 elif len(values_filtered) == 1:
@@ -437,7 +411,7 @@ class EqcBlend:
             "area": self.area_def
         }
         return xr.DataArray(
-            self.__earth_array.copy(),
+            data=self.__earth_array.copy(),
             dims=["y", "x"],
             coords=self.coords,
             attrs=attrs

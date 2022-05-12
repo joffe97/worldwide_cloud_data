@@ -1,14 +1,14 @@
-import os
-import pathlib
-
-from satpy import Scene
-import satpy.writers
-from xarray import DataArray
-from pyresample import create_area_def, AreaDefinition
-import matplotlib.pyplot as plt
-import numpy as np
-from typing import Callable, Union
 import functools
+from typing import Callable, Union
+
+import matplotlib.pyplot as plt
+import satpy.writers
+from pyresample import create_area_def, AreaDefinition
+from satpy import Scene
+from satpy.writers import to_image
+from satpy.composites import CloudCompositor
+from trollimage.xrimage import XRImage
+from xarray import DataArray
 
 from wwclouds.config import DATA_PATH_SATPY_RESAMPLE_CACHE
 
@@ -54,20 +54,6 @@ class SceneExt(Scene):
     def lon_0(self) -> Union[float, None]:
         return self.proj.get("lon_0")
 
-    def get_lonlats(self, band) -> tuple[np.ndarray, np.ndarray]:
-        return self[band].attrs["area"].get_lonlats()
-
-    def get_values(self, band) -> np.ndarray:
-        return self[band].values
-
-    def get_pixel_size_in_degrees(self, band) -> float:
-        lons = self.get_lonlats(band)[0][0]
-        if len(lons) < 2:
-            return 0.0
-        cell1 = lons[0]
-        cell2 = lons[1]
-        return abs(cell2 - cell1)
-
     @_return_as_scene_ext_decorator
     def resample(self, destination=None, datasets=None, generate=True,
                  unload=True, resampler=None, reduce_data=True,
@@ -101,8 +87,18 @@ class SceneExt(Scene):
             area_def_args["resolution"] = resolution
 
         area_def = create_area_def(
-            "eqc_area",
-            projection,
+            area_id="eqc_area",
+            projection=projection,
             **area_def_args
         )
-        return self.resample(area_def, resampler="bilinear", cache_dir=DATA_PATH_SATPY_RESAMPLE_CACHE, **kwargs)
+        return self.resample(
+            destination=area_def,
+            resampler="bilinear",
+            cache_dir=DATA_PATH_SATPY_RESAMPLE_CACHE,
+            **kwargs
+        )
+
+    def create_cloud_image(self, frequencies: list[float]) -> XRImage:
+        compositor = CloudCompositor(name="clouds", transition_min=230.0, transition_max=298.15, transition_gamma=1.5)
+        composite = compositor([self[frequency] for frequency in frequencies])
+        return to_image(composite)

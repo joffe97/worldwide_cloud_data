@@ -1,5 +1,5 @@
-from wwclouds.satellite.satellite_type import SatelliteType
-from wwclouds.satellite import downloader
+from wwclouds.domains.satellite.satellite_type import SatelliteType
+from wwclouds.domains.satellite import downloader
 
 
 class Himawari(SatelliteType):

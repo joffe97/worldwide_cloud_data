@@ -1,6 +1,6 @@
 from typing import Type
-from wwclouds.satellite import satellite_type
-from wwclouds.satellite.satellite_enum import SatelliteEnum
+from wwclouds.domains.satellite import satellite_type
+from wwclouds.domains.satellite.satellite_enum import SatelliteEnum
 
 
 class _SatelliteMappingEntry:

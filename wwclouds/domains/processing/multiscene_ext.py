@@ -1,14 +1,10 @@
 import time
 
 from satpy import Scene, MultiScene, DataQuery, DataID
-from satpy.dataset.dataid import WavelengthRange
-from pyresample import create_area_def, AreaDefinition
-from typing import Callable, Union
-import functools
+from typing import Union
 from collections.abc import Iterable
-from xarray import DataArray
-from wwclouds.scene_handler.scene_ext import SceneExt
-from wwclouds.scene_handler.eqc_blend import EqcBlend
+from wwclouds.domains.processing.scene_ext import SceneExt
+from wwclouds.domains.processing.eqc_blend import EqcBlend
 
 
 class MultiSceneExt(MultiScene):
@@ -26,13 +22,6 @@ class MultiSceneExt(MultiScene):
     @shared_dataset_ids.setter
     def shared_dataset_ids(self, value):
         self.__shared_dataset_ids_override = value
-
-    def remove_override_for_shared_dataset_ids(self) -> None:
-        self.__shared_dataset_ids_override = None
-
-    @property
-    def scenes_ext_sorted_by_longitude(self) -> list[SceneExt]:
-        return list(sorted(self.scenes, key=lambda scn: scn.lon_0))
 
     @property
     def area_extent_ll(self) -> tuple[float, float, float, float]:
@@ -61,22 +50,6 @@ class MultiSceneExt(MultiScene):
         else:
             raise TypeError("scenes parameter must be a list of eigther Scene or SceneExt")
         return scenes_ext
-
-    @staticmethod
-    def __return_as_multiscene_ext_decorator(func) -> Callable[..., "MultiSceneExt"]:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            multi_scene = func(*args, **kwargs)
-            return MultiSceneExt(multi_scene.scenes)
-
-        return wrapper
-
-    @staticmethod
-    def from_multi_scene(multi_scene: MultiScene):
-        multi_scene_ext = MultiSceneExt()
-        old_vars = dict((key, value) for (key, value) in vars(multi_scene).items())
-        for key, value in old_vars.items():
-            setattr(multi_scene_ext, key, value)
 
     def copy(self, override_scenes: Union[list[Scene], list[SceneExt]] = None) -> "MultiSceneExt":
         old_vars = dict((key, value) for (key, value) in vars(self).items())
@@ -133,10 +106,6 @@ class MultiSceneExt(MultiScene):
         for scn in self.scenes:
             scn.imshow(query)
 
-    def resample(self, destination=None, **kwargs) -> "MultiSceneExt":
-        new_multi_scn = super().resample(destination, **kwargs)
-        return self.copy(new_multi_scn.scenes)
-
     def resample_all_to_eqc(self, resolution=None, **kwargs) -> "MultiSceneExt":
         return MultiSceneExt([
             scn.resample_to_eqc_area(resolution=resolution, reduce_data=False, **kwargs) for scn in self.scenes
@@ -154,9 +123,9 @@ class MultiSceneExt(MultiScene):
         if len(self.scenes) == 0:
             raise ValueError("cannot combine MultiSceneExt with 0 scenes")
         start_time = time.time()
-        eqc_blend = EqcBlend((-max_latitude, max_latitude))
+        eqc_blend = EqcBlend(latitude_range=(-max_latitude, max_latitude))
         combined_scn = self.blend(eqc_blend)
-        print(f"Combined scenes: {round(time.time() - start_time, 4)} sec")
         combined_scn_ext = SceneExt.from_scene(combined_scn)
         combined_scn_ext.load(self.loaded)
+        print(f"Combined scenes: {round(time.time() - start_time, 4)} sec")
         return combined_scn_ext

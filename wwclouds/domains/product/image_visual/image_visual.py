@@ -13,7 +13,7 @@ class ImageVisual:
         self.__image: Union[..., None] = None
 
         if load:
-            self.load()
+            self.load_world_map()
 
     @staticmethod
     def from_image(image, **kwargs) -> "ImageVisual":
@@ -31,16 +31,12 @@ class ImageVisual:
         return str(pathlib.Path(__file__).parent.resolve())
 
     @property
-    def filename(self) -> str:
+    def world_map_filename(self) -> str:
         return "world_map.png"
 
     @property
-    def filepath(self) -> str:
-        return f"{self.directory}/{self.filename}"
-
-    @property
-    def shapefile_path(self) -> str:
-        return f"{self.directory}/world_borders.shp"
+    def world_map_filepath(self) -> str:
+        return f"{self.directory}/{self.world_map_filename}"
 
     @property
     def image(self):
@@ -48,8 +44,8 @@ class ImageVisual:
             raise ValueError("image cannot be used before it's loaded")
         return self.__image
 
-    def load(self):
-        image = cv2.imread(self.filepath, cv2.IMREAD_UNCHANGED)
+    def load_world_map(self):
+        image = cv2.imread(self.world_map_filepath, cv2.IMREAD_UNCHANGED)
         image_resized = cv2.resize(image, self.resolution)
         self.__image = image_resized
 
@@ -76,18 +72,10 @@ class ImageVisual:
         alpha_s = s_img[:, :, 3] / 255.0
         alpha_l = 1.0 - alpha_s
 
+        self.__image = l_img
         for c in range(0, 3):
-            self.__image = l_img
             self.__image[y1:y2, :, c] = (alpha_s * s_img[:, :, c] + alpha_l * l_img[y1:y2, :, c])
-
-    def add_4dim_image_from_png(self, filepath: str):
-        image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
-        self.add_4dim_image(image)
 
     def save_as_png(self, filepath):
         cv2.imwrite(filepath, self.image)
 
-
-if __name__ == '__main__':
-    wwmap = ImageVisual((10000, 5000), load=True)
-    wwmap.create_image()
