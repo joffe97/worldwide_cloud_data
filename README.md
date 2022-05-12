@@ -18,6 +18,7 @@ https://www.overleaf.com/read/prhxhpqvphwy
 
 ### How to run:
 Add credentials to `credentials.ini.dummy` file.
+
 Rename `credentials.ini.dummy` to `credentials.ini`.
 
 ```bash
