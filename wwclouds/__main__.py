@@ -12,5 +12,4 @@ from wwclouds.domains.product import ProductCreator
 
 
 if __name__ == '__main__':
-    from datetime import datetime
     ProductCreator.from_args().create_products()
