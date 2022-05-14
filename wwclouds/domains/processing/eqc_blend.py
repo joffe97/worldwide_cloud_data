@@ -342,9 +342,9 @@ class EqcBlend:
 
     def __add_value_from_two_map_portions(self, map_portion1: MapPortion, map_portion2: MapPortion) -> None:
         lon_indexes_length = len(map_portion1.lon_indexes)
+
         earth_array_lat_range = self.__earth_array_latitude_index_range
-        if len(map_portion1.lat_indexes) != len(map_portion2.lat_indexes):
-            raise ValueError("map_portion objects must have axis indexes of same dimensions")
+
         for lat_index1, lat_index2 in zip(map_portion1.lat_indexes, map_portion2.lat_indexes):
             for i, (lon_index1, lon_index2) in enumerate(zip(map_portion1.lon_indexes, map_portion2.lon_indexes)):
                 new_lon_index, new_lat_index = self.__translate_coords_to_earth_array_indexes(
